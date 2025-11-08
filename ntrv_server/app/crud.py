@@ -77,11 +77,17 @@ def delete_menu_item(db: Session, item_id: int) -> Optional[MenuItem]:
 
 # Order CRUD operations
 def get_order(db: Session, order_id: int) -> Optional[Order]:
-    return db.query(Order).filter(Order.id == order_id).first()
+    return db.query(Order).filter(
+        Order.id == order_id,
+        Order.is_deleted.is_(False)
+    ).first()
 
 
 def get_order_by_number(db: Session, order_number: str) -> Optional[Order]:
-    return db.query(Order).filter(Order.order_number == order_number).first()
+    return db.query(Order).filter(
+        Order.order_number == order_number,
+        Order.is_deleted.is_(False)
+    ).first()
 
 
 def get_orders(
@@ -95,7 +101,7 @@ def get_orders(
     time_of_day: Optional[str] = None,
     item_id: Optional[int] = None
 ) -> List[Order]:
-    query = db.query(Order)
+    query = db.query(Order).filter(Order.is_deleted.is_(False))
     
     # Apply filters
     if date_from:
@@ -270,6 +276,46 @@ def update_order(
     return db_order
 
 
+def soft_delete_order(db: Session, order_id: int) -> Optional[Order]:
+    """Soft delete an order by setting is_deleted=True and deleted_at timestamp"""
+    # Get order without checking is_deleted to allow deleting already deleted orders
+    db_order = db.query(Order).filter(Order.id == order_id).first()
+    if not db_order:
+        return None
+    
+    # Check if already deleted
+    if db_order.is_deleted:
+        return None  # Already deleted
+    
+    # Soft delete
+    db_order.is_deleted = True
+    db_order.deleted_at = datetime.utcnow()
+    
+    db.commit()
+    db.refresh(db_order)
+    return db_order
+
+
+def soft_delete_order_by_number(db: Session, order_number: str) -> Optional[Order]:
+    """Soft delete an order by order_number"""
+    # Get order without checking is_deleted to allow deleting already deleted orders
+    db_order = db.query(Order).filter(Order.order_number == order_number).first()
+    if not db_order:
+        return None
+    
+    # Check if already deleted
+    if db_order.is_deleted:
+        return None  # Already deleted
+    
+    # Soft delete
+    db_order.is_deleted = True
+    db_order.deleted_at = datetime.utcnow()
+    
+    db.commit()
+    db.refresh(db_order)
+    return db_order
+
+
 # Analytics functions
 def get_analytics_summary(
     db: Session,
@@ -281,7 +327,7 @@ def get_analytics_summary(
         func.sum(Order.total_amount).label("total_sales"),
         func.sum(Order.total_making_cost).label("total_making_cost"),
         func.sum(Order.total_profit).label("total_profit")
-    )
+    ).filter(Order.is_deleted.is_(False))
     
     if date_from:
         query = query.filter(Order.timestamp >= date_from)
@@ -321,6 +367,8 @@ def get_top_selling_items(
         MenuItem, MenuItem.id == OrderItem.menu_item_id
     ).join(
         Order, Order.id == OrderItem.order_id
+    ).filter(
+        Order.is_deleted == False
     ).group_by(
         OrderItem.item_name, MenuItem.category
     )
@@ -402,7 +450,7 @@ def get_sales_by_time_unit(
         time_format,
         func.sum(Order.total_amount).label("sales"),
         func.count(Order.id).label("orders_count")
-    )
+    ).filter(Order.is_deleted.is_(False))
     
     # Apply filters
     if date_from:
@@ -452,7 +500,8 @@ def get_customer_details(
         func.count(Order.id).label("total_orders")
     ).filter(
         Order.customer_name.isnot(None),
-        Order.customer_name != ""
+        Order.customer_name != "",
+        Order.is_deleted.is_(False)
     ).group_by(
         Order.customer_name, Order.phone
     )

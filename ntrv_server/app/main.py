@@ -182,6 +182,23 @@ def update_order(
     return db_order
 
 
+@app.delete("/api/orders/{order_number}")
+def delete_order(order_number: str, db: Session = Depends(get_db)):
+    """Soft delete an order by order_number (e.g., NV-20251109-0003)"""
+    db_order = crud.soft_delete_order_by_number(db, order_number=order_number)
+    if db_order is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Order with number {order_number} not found or already deleted"
+        )
+    return {
+        "message": f"Order {db_order.order_number} has been deleted successfully",
+        "order_id": db_order.id,
+        "order_number": db_order.order_number,
+        "deleted_at": db_order.deleted_at.isoformat() if db_order.deleted_at else None
+    }
+
+
 # Analytics endpoints
 @app.get("/api/analytics/summary")
 def get_analytics_summary(

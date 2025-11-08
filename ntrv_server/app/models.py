@@ -76,6 +76,10 @@ class Order(Base):
     net_amount = Column(Numeric(10, 2), nullable=False)  # total_amount - total_making_cost
     total_profit = Column(Numeric(10, 2), nullable=False)  # net_amount - other_costs
     
+    # Soft delete fields
+    is_deleted = Column(Boolean, default=False, nullable=False)
+    deleted_at = Column(DateTime, nullable=True)
+    
     created_at = Column(DateTime, default=datetime.utcnow)
     
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
