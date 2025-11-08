@@ -438,3 +438,40 @@ def get_sales_by_time_unit(
     
     return formatted_results
 
+
+def get_customer_details(
+    db: Session,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None
+) -> List[Dict]:
+    """Get unique customers with their total purchase amounts"""
+    query = db.query(
+        Order.customer_name,
+        Order.phone,
+        func.sum(Order.total_amount).label("total_purchased"),
+        func.count(Order.id).label("total_orders")
+    ).filter(
+        Order.customer_name.isnot(None),
+        Order.customer_name != ""
+    ).group_by(
+        Order.customer_name, Order.phone
+    )
+    
+    if date_from:
+        query = query.filter(Order.timestamp >= date_from)
+    if date_to:
+        query = query.filter(Order.timestamp <= date_to)
+    
+    query = query.order_by(func.sum(Order.total_amount).desc())
+    
+    results = query.all()
+    return [
+        {
+            "customer_name": item.customer_name,
+            "phone": item.phone or "N/A",
+            "total_purchased": item.total_purchased or Decimal('0'),
+            "total_orders": item.total_orders or 0
+        }
+        for item in results
+    ]
+

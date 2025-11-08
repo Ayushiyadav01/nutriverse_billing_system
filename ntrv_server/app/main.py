@@ -221,3 +221,16 @@ def get_sales_by_time(
         date_to=date_to
     )
 
+
+@app.get("/api/analytics/customers")
+def get_customer_details(
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
+    db: Session = Depends(get_db)
+):
+    return crud.get_customer_details(
+        db,
+        date_from=date_from,
+        date_to=date_to
+    )
+
