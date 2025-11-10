@@ -251,3 +251,12 @@ def get_customer_details(
         date_to=date_to
     )
 
+
+@app.get("/api/customers/autocomplete")
+def get_customer_autocomplete(
+    search: Optional[str] = Query(None, description="Search query for customer name or phone"),
+    db: Session = Depends(get_db)
+):
+    """Get customer name and phone suggestions for autocomplete"""
+    return crud.get_customer_autocomplete(db, search_query=search)
+

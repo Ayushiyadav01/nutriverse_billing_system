@@ -1,7 +1,7 @@
 from datetime import datetime, date, time, timedelta
 from decimal import Decimal
 from typing import Dict, List, Optional, Tuple, Union
-from sqlalchemy import func, extract, text
+from sqlalchemy import func, extract, text, or_, and_
 from sqlalchemy.orm import Session
 
 from app.models import MenuItem, Order, OrderItem, OrderMode, PaymentMode, DiscountType
@@ -520,6 +520,46 @@ def get_customer_details(
             "phone": item.phone or "N/A",
             "total_purchased": item.total_purchased or Decimal('0'),
             "total_orders": item.total_orders or 0
+        }
+        for item in results
+    ]
+
+
+def get_customer_autocomplete(db: Session, search_query: Optional[str] = None) -> List[Dict]:
+    """Get unique customer names and phones for autocomplete suggestions"""
+    query = db.query(
+        Order.customer_name,
+        Order.phone
+    ).filter(
+        Order.customer_name.isnot(None),
+        Order.customer_name != "",
+        Order.is_deleted.is_(False)
+    ).distinct()
+    
+    # Filter by search query if provided (case-insensitive)
+    if search_query:
+        search_lower = search_query.lower()
+        # Use func.lower() for better database compatibility
+        # Build filter conditions
+        filters = [
+            func.lower(Order.customer_name).like(f"%{search_lower}%")
+        ]
+        # Add phone filter only if phone is not None
+        filters.append(
+            and_(
+                Order.phone.isnot(None),
+                func.lower(Order.phone).like(f"%{search_lower}%")
+            )
+        )
+        query = query.filter(or_(*filters))
+    
+    query = query.order_by(Order.customer_name).limit(50)  # Limit to 50 suggestions
+    
+    results = query.all()
+    return [
+        {
+            "customer_name": item.customer_name,
+            "phone": item.phone or ""
         }
         for item in results
     ]

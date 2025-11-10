@@ -3,6 +3,8 @@ import pandas as pd
 from components.add_item import render_menu_management
 from components.billing import render_billing
 from components.analysis import render_analysis
+from components.customer_details import render_customer_details
+from components.order_history import render_order_history
 
 # Set page config
 st.set_page_config(
@@ -49,7 +51,7 @@ st.markdown("<p class='sub-header'>Order, Billing & Analytics System</p>", unsaf
 
 # Sidebar navigation
 st.sidebar.title("Navigation")
-page = st.sidebar.radio("Go to", ["Menu Management", "Billing", "Analysis"])
+page = st.sidebar.radio("Go to", ["Menu Management", "Billing", "Analysis", "Customer Details", "Order History"])
 
 # Display the selected page
 if page == "Menu Management":
@@ -58,6 +60,10 @@ elif page == "Billing":
     render_billing()
 elif page == "Analysis":
     render_analysis()
+elif page == "Customer Details":
+    render_customer_details()
+elif page == "Order History":
+    render_order_history()
 
 # Footer
 st.sidebar.markdown("---")

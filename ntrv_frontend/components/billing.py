@@ -75,6 +75,18 @@ def fetch_order_by_number(order_number: str) -> Optional[Dict]:
     except requests.RequestException:
         return None
 
+def fetch_customer_suggestions(search_query: Optional[str] = None) -> List[Dict]:
+    """Fetch customer name and phone suggestions for autocomplete"""
+    try:
+        params = {}
+        if search_query:
+            params["search"] = search_query
+        response = requests.get(f"{API_URL}/customers/autocomplete", params=params)
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException:
+        return []
+
 def initialize_session_state():
     """Initialize session state variables for billing"""
     if 'cart' not in st.session_state:
@@ -124,6 +136,9 @@ def initialize_session_state():
     
     if 'code_qty_input' not in st.session_state:
         st.session_state.code_qty_input = 1
+    
+    if 'selected_customer_suggestion' not in st.session_state:
+        st.session_state.selected_customer_suggestion = None
     
     if 'show_invoice' not in st.session_state:
         st.session_state.show_invoice = False
@@ -253,6 +268,20 @@ def view_invoice_callback():
     if 'last_order_id' in st.session_state and st.session_state.last_order_id:
         st.session_state.show_invoice = True
 
+def select_customer_callback():
+    """Callback function for selecting a customer from suggestions"""
+    if st.session_state.selected_customer_suggestion:
+        # Parse the selected customer (format: "name|phone")
+        parts = st.session_state.selected_customer_suggestion.split("|")
+        if len(parts) >= 2:
+            st.session_state.customer_name = parts[0]
+            st.session_state.phone = parts[1] if parts[1] else ""
+        elif len(parts) == 1:
+            st.session_state.customer_name = parts[0]
+            st.session_state.phone = ""
+        # Reset the selection to allow re-selection
+        st.session_state.selected_customer_suggestion = None
+
 def render_billing():
     st.header("Billing")
     
@@ -280,24 +309,45 @@ def render_billing():
         if menu_items:
             menu_df = pd.DataFrame(menu_items)
             
-            # Create a searchable dropdown
-            selected_item = st.selectbox(
-                "Search Item",
-                options=menu_df['id'].tolist(),
-                format_func=lambda x: f"{menu_df.loc[menu_df['id'] == x, 'code'].iloc[0]} - {menu_df.loc[menu_df['id'] == x, 'name'].iloc[0]} (₹{menu_df.loc[menu_df['id'] == x, 'price'].iloc[0]})",
-                key="selected_item_id"
+            # Add search functionality
+            search_query = st.text_input(
+                "🔍 Search Item (by name, code, or category)",
+                key="item_search_query",
+                placeholder="Type to search..."
             )
             
-            # The selected_item is automatically stored in st.session_state.selected_item_id
-            # No need to assign it again
+            # Filter menu items based on search query
+            if search_query:
+                search_lower = search_query.lower()
+                filtered_df = menu_df[
+                    menu_df['name'].str.lower().str.contains(search_lower, na=False) |
+                    menu_df['code'].str.lower().str.contains(search_lower, na=False) |
+                    menu_df['category'].str.lower().str.contains(search_lower, na=False)
+                ]
+            else:
+                filtered_df = menu_df
             
-            qty_col1, qty_col2 = st.columns([3, 1])
-            with qty_col1:
-                qty = st.number_input("Quantity", min_value=1, value=1, step=1, key="selected_qty")
-            with qty_col2:
-                st.write("")
-                st.write("")
-                st.button("Add to Cart", use_container_width=True, on_click=add_to_cart_callback)
+            if len(filtered_df) == 0:
+                st.warning("No items found matching your search.")
+            else:
+                # Create a searchable dropdown with filtered items
+                selected_item = st.selectbox(
+                    f"Select Item ({len(filtered_df)} items found)",
+                    options=filtered_df['id'].tolist(),
+                    format_func=lambda x: f"{filtered_df.loc[filtered_df['id'] == x, 'code'].iloc[0]} - {filtered_df.loc[filtered_df['id'] == x, 'name'].iloc[0]} (₹{filtered_df.loc[filtered_df['id'] == x, 'price'].iloc[0]})",
+                    key="selected_item_id"
+                )
+                
+                # The selected_item is automatically stored in st.session_state.selected_item_id
+                # No need to assign it again
+                
+                qty_col1, qty_col2 = st.columns([3, 1])
+                with qty_col1:
+                    qty = st.number_input("Quantity", min_value=1, value=1, step=1, key="selected_qty")
+                with qty_col2:
+                    st.write("")
+                    st.write("")
+                    st.button("Add to Cart", use_container_width=True, on_click=add_to_cart_callback)
         
         # Add item by code
         with st.expander("Add by Code"):
@@ -361,9 +411,75 @@ def render_billing():
     with col2:
         st.subheader("Order Details")
         
-        # Customer details
-        st.session_state.customer_name = st.text_input("Customer Name", value=st.session_state.customer_name)
-        st.session_state.phone = st.text_input("Phone", value=st.session_state.phone)
+        # Customer details with autocomplete
+        customer_name_input = st.text_input(
+            "Customer Name 🔍", 
+            value=st.session_state.customer_name,
+            key="customer_name_input",
+            placeholder="Start typing to see suggestions..."
+        )
+        
+        # Update customer_name in session state when input changes
+        if customer_name_input != st.session_state.customer_name:
+            st.session_state.customer_name = customer_name_input
+            # Reset selection when user types manually
+            if 'last_selected_suggestion' in st.session_state:
+                del st.session_state.last_selected_suggestion
+        
+        # Fetch customer suggestions based on input
+        search_query = customer_name_input.strip() if customer_name_input else None
+        customer_suggestions = fetch_customer_suggestions(search_query=search_query)
+        
+        # Show suggestions dropdown if there are suggestions and user has typed something
+        if customer_suggestions and search_query and len(search_query) > 0:
+            # Create options for selectbox (format: "name|phone")
+            suggestion_options = [
+                f"{customer['customer_name']}|{customer['phone']}"
+                for customer in customer_suggestions
+            ]
+            
+            # Add "None" option at the beginning
+            suggestion_options = ["Select a customer..."] + suggestion_options
+            
+            # Get current index - default to 0 if no previous selection
+            current_index = 0
+            if 'last_selected_suggestion' in st.session_state:
+                if st.session_state.last_selected_suggestion in suggestion_options:
+                    current_index = suggestion_options.index(st.session_state.last_selected_suggestion)
+            
+            selected_suggestion = st.selectbox(
+                "Select from existing customers:",
+                options=suggestion_options,
+                key="customer_suggestion_select",
+                index=current_index
+            )
+            
+            # If a customer is selected (not "Select a customer...")
+            if selected_suggestion and selected_suggestion != "Select a customer...":
+                # Check if this is a new selection
+                if selected_suggestion != st.session_state.get("last_selected_suggestion"):
+                    # Parse and fill customer details
+                    parts = selected_suggestion.split("|")
+                    if len(parts) >= 2:
+                        st.session_state.customer_name = parts[0]
+                        st.session_state.phone = parts[1] if parts[1] else ""
+                    elif len(parts) == 1:
+                        st.session_state.customer_name = parts[0]
+                        st.session_state.phone = ""
+                    st.session_state.last_selected_suggestion = selected_suggestion
+                    # Trigger rerun to update the text inputs
+                    st.rerun()
+        
+        # Phone number input (will be auto-filled when customer is selected)
+        phone_input = st.text_input(
+            "Phone", 
+            value=st.session_state.phone,
+            key="phone_input"
+        )
+        
+        # Update phone in session state
+        if phone_input != st.session_state.phone:
+            st.session_state.phone = phone_input
         
         # Order mode and payment mode
         order_col1, order_col2 = st.columns(2)
