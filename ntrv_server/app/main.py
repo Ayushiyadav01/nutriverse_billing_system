@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date
 from decimal import Decimal
 from typing import List, Optional
 import os
@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app import crud, models, schemas, utils
 from app.db import get_db, init_db
 from app.config import settings
+from app.models import FoodPreparationStage, PaymentStatus, PaymentMode
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -117,6 +118,100 @@ def create_order(order: schemas.OrderCreate, db: Session = Depends(get_db)):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
+
+
+@app.get("/api/orders/active", response_model=List[schemas.ActiveOrder])
+def get_active_orders(db: Session = Depends(get_db)):
+    """Get active orders (Ordered or Preparing, not Payment Done, not Due)"""
+    orders = crud.get_active_orders(db)
+    # Convert Order objects using Pydantic schema for proper validation
+    result = []
+    for order in orders:
+        # Handle enum values - they might be enum instances or strings from database
+        food_stage = order.food_preparation_stage
+        if food_stage is None:
+            food_stage = "ordered"
+        elif hasattr(food_stage, 'value'):
+            food_stage = food_stage.value
+        else:
+            food_stage = str(food_stage).lower()
+        
+        payment_status = order.payment_status
+        if payment_status is None:
+            payment_status = "pending"
+        elif hasattr(payment_status, 'value'):
+            payment_status = payment_status.value
+        else:
+            payment_status = str(payment_status).lower()
+        
+        payment_mode = order.payment_mode
+        if payment_mode is None:
+            payment_mode = "cash"
+        elif hasattr(payment_mode, 'value'):
+            payment_mode = payment_mode.value
+        else:
+            payment_mode = str(payment_mode).lower()
+        
+        order_dict = {
+            "id": order.id,
+            "order_number": order.order_number,
+            "timestamp": order.timestamp,
+            "customer_name": order.customer_name,
+            "food_preparation_stage": food_stage,
+            "payment_status": payment_status,
+            "payment_mode": payment_mode,
+            "total_amount": order.total_amount,
+            "created_at": order.created_at
+        }
+        result.append(order_dict)
+    return result
+
+
+@app.get("/api/orders/due-payments", response_model=List[schemas.ActiveOrder])
+def get_due_payments(db: Session = Depends(get_db)):
+    """Get orders with pending or due payments"""
+    orders = crud.get_due_payments(db)
+    # Convert Order objects using Pydantic schema for proper validation
+    result = []
+    for order in orders:
+        # Handle enum values - they might be enum instances or strings from database
+        food_stage = order.food_preparation_stage
+        if food_stage is None:
+            food_stage = "ordered"
+        elif hasattr(food_stage, 'value'):
+            food_stage = food_stage.value
+        else:
+            food_stage = str(food_stage).lower()
+        
+        payment_status = order.payment_status
+        if payment_status is None:
+            payment_status = "pending"
+        elif hasattr(payment_status, 'value'):
+            payment_status = payment_status.value
+        else:
+            payment_status = str(payment_status).lower()
+        
+        payment_mode = order.payment_mode
+        if payment_mode is None:
+            payment_mode = "cash"
+        elif hasattr(payment_mode, 'value'):
+            payment_mode = payment_mode.value
+        else:
+            payment_mode = str(payment_mode).lower()
+        
+        order_dict = {
+            "id": order.id,
+            "order_number": order.order_number,
+            "timestamp": order.timestamp,
+            "customer_name": order.customer_name,
+            "food_preparation_stage": food_stage,
+            "payment_status": payment_status,
+            "payment_mode": payment_mode,
+            "total_amount": order.total_amount,
+            "created_at": order.created_at
+        }
+        result.append(order_dict)
+    return result
 
 
 @app.get("/api/orders/{order_id}", response_model=schemas.Order)
@@ -259,4 +354,103 @@ def get_customer_autocomplete(
 ):
     """Get customer name and phone suggestions for autocomplete"""
     return crud.get_customer_autocomplete(db, search_query=search)
+
+
+@app.put("/api/orders/{order_id}/status", response_model=schemas.Order)
+def update_order_status(
+    order_id: int,
+    status_update: schemas.OrderStatusUpdate,
+    db: Session = Depends(get_db)
+):
+    """Update order status (preparation stage, payment status, and/or payment mode)"""
+    db_order = crud.update_order_status(
+        db,
+        order_id=order_id,
+        food_preparation_stage=status_update.food_preparation_stage,
+        payment_status=status_update.payment_status,
+        payment_mode=status_update.payment_mode
+    )
+    if db_order is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Order with ID {order_id} not found"
+        )
+    return db_order
+
+
+@app.post("/api/orders/{order_id}/mark-paid", response_model=schemas.Order)
+def mark_order_as_paid(order_id: int, db: Session = Depends(get_db)):
+    """Mark an order as payment completed"""
+    db_order = crud.update_order_status(
+        db,
+        order_id=order_id,
+        payment_status=PaymentStatus.PAYMENT_DONE
+    )
+    if db_order is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Order with ID {order_id} not found"
+        )
+    return db_order
+
+
+# Expense endpoints
+@app.post("/api/expenses/", response_model=schemas.ExpenseOut, status_code=status.HTTP_201_CREATED)
+def create_expense(expense: schemas.ExpenseCreate, db: Session = Depends(get_db)):
+    """Create a new expense"""
+    return crud.create_expense(db=db, expense=expense)
+
+
+@app.get("/api/expenses/", response_model=schemas.ExpenseListResponse)
+def list_expenses(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    date_from: Optional[date] = Query(None, description="Filter expenses from this date (YYYY-MM-DD)"),
+    date_to: Optional[date] = Query(None, description="Filter expenses to this date (YYYY-MM-DD)"),
+    category: Optional[str] = Query(None, description="Filter by category"),
+    expense_type: Optional[str] = Query(None, description="Filter by expense type (one-time or recurrent)"),
+    payment_mode: Optional[str] = Query(None, description="Filter by payment mode"),
+    db: Session = Depends(get_db)
+):
+    """List expenses with optional filters"""
+    expenses, total = crud.list_expenses(
+        db=db,
+        skip=skip,
+        limit=limit,
+        date_from=date_from,
+        date_to=date_to,
+        category=category,
+        expense_type=expense_type,
+        payment_mode=payment_mode
+    )
+    return schemas.ExpenseListResponse(
+        expenses=expenses,
+        total=total,
+        skip=skip,
+        limit=limit
+    )
+
+
+@app.get("/api/expenses/summary", response_model=schemas.ExpenseSummary)
+def get_expense_summary(
+    date_from: Optional[date] = Query(None, description="Start date for summary (YYYY-MM-DD)"),
+    date_to: Optional[date] = Query(None, description="End date for summary (YYYY-MM-DD)"),
+    db: Session = Depends(get_db)
+):
+    """Get expense summary with totals and breakdowns by category and month"""
+    summary = crud.get_expense_summary(db=db, date_from=date_from, date_to=date_to)
+    # FastAPI will automatically validate and serialize the dict using the response_model
+    return summary
+
+
+@app.get("/api/expenses/{expense_id}", response_model=schemas.ExpenseOut)
+def get_expense(expense_id: int, db: Session = Depends(get_db)):
+    """Get a single expense by ID"""
+    db_expense = crud.get_expense(db, expense_id=expense_id)
+    if db_expense is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Expense with ID {expense_id} not found"
+        )
+    return db_expense
 

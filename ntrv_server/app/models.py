@@ -1,13 +1,20 @@
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from enum import Enum as PyEnum
 from sqlalchemy import (
-    Boolean, Column, DateTime, Enum, ForeignKey, 
+    Boolean, Column, Date, DateTime, Enum, ForeignKey, 
     Integer, Numeric, String, Text
 )
 from sqlalchemy.orm import relationship
 
 from app.db import Base
+
+# IST timezone (UTC+5:30)
+IST = timezone(timedelta(hours=5, minutes=30))
+
+def get_ist_now() -> datetime:
+    """Get current time in IST (Indian Standard Time)"""
+    return datetime.now(IST)
 
 
 class OrderMode(str, PyEnum):
@@ -30,6 +37,25 @@ class DiscountType(str, PyEnum):
     NONE = "none"
 
 
+class FoodPreparationStage(str, PyEnum):
+    ORDERED = "ordered"
+    PREPARING = "preparing"
+    COMPLETED = "completed"
+
+
+class PaymentStatus(str, PyEnum):
+    PENDING = "pending"
+    DUE = "due"
+    PAYMENT_DONE = "payment_done"
+    OVERPAID = "overpaid"
+    ADJUSTED = "adjusted"
+
+
+class ExpenseType(str, PyEnum):
+    ONE_TIME = "one-time"
+    RECURRENT = "recurrent"
+
+
 class MenuItem(Base):
     __tablename__ = "menu_items"
     
@@ -40,8 +66,8 @@ class MenuItem(Base):
     price = Column(Numeric(10, 2), nullable=False)  # sell price per unit
     cost = Column(Numeric(10, 2), nullable=False)   # making cost per unit
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=get_ist_now)
+    updated_at = Column(DateTime, default=get_ist_now, onupdate=get_ist_now)
     
     order_items = relationship("OrderItem", back_populates="menu_item")
     
@@ -54,7 +80,7 @@ class Order(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     order_number = Column(String(20), unique=True, index=True)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime, default=get_ist_now)
     customer_name = Column(String(100), nullable=True)
     phone = Column(String(20), nullable=True)
     mode_of_order = Column(Enum(OrderMode), default=OrderMode.IN_PERSON)
@@ -80,7 +106,12 @@ class Order(Base):
     is_deleted = Column(Boolean, default=False, nullable=False)
     deleted_at = Column(DateTime, nullable=True)
     
-    created_at = Column(DateTime, default=datetime.utcnow)
+    # Order management fields
+    food_preparation_stage = Column(String(20), default="ordered")
+    payment_status = Column(String(20), default="pending")
+    payment_completed_at = Column(DateTime, nullable=True)
+    
+    created_at = Column(DateTime, default=get_ist_now)
     
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
     
@@ -108,4 +139,37 @@ class OrderItem(Base):
     
     def __repr__(self):
         return f"<OrderItem {self.item_name}: {self.qty} x {self.unit_price}>"
+
+
+# Expense Categories - constants for recommended categories
+EXPENSE_CATEGORIES = [
+    "Raw Materials",
+    "Packaging",
+    "Utilities",
+    "Staff Salary",
+    "Logistics",
+    "Marketing",
+    "Rent",
+    "Maintenance",
+    "Other"
+]
+
+
+class Expense(Base):
+    __tablename__ = "expenses"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    date = Column(Date, nullable=False, index=True)
+    title = Column(String(255), nullable=False)
+    category = Column(String(100), nullable=False)
+    expense_type = Column(String(20), nullable=False)  # "one-time" | "recurrent"
+    amount = Column(Numeric(12, 2), nullable=False)
+    payment_mode = Column(String(30), nullable=True)  # "cash", "card", "upi", "wallet"
+    vendor = Column(String(255), nullable=True)
+    notes = Column(Text, nullable=True)
+    attachment = Column(String(512), nullable=True)  # optional path to upload
+    created_at = Column(DateTime, default=get_ist_now)
+    
+    def __repr__(self):
+        return f"<Expense {self.title}: ₹{self.amount} on {self.date}>"
 

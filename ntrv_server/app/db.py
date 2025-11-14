@@ -54,6 +54,18 @@ def _add_missing_columns():
         if 'deleted_at' not in columns:
             cursor.execute("ALTER TABLE orders ADD COLUMN deleted_at DATETIME")
         
+        # Add food_preparation_stage column if it doesn't exist
+        if 'food_preparation_stage' not in columns:
+            cursor.execute("ALTER TABLE orders ADD COLUMN food_preparation_stage VARCHAR(20) DEFAULT 'ordered'")
+        
+        # Add payment_status column if it doesn't exist
+        if 'payment_status' not in columns:
+            cursor.execute("ALTER TABLE orders ADD COLUMN payment_status VARCHAR(20) DEFAULT 'pending'")
+        
+        # Add payment_completed_at column if it doesn't exist
+        if 'payment_completed_at' not in columns:
+            cursor.execute("ALTER TABLE orders ADD COLUMN payment_completed_at DATETIME")
+        
         conn.commit()
         conn.close()
     except Exception as e:

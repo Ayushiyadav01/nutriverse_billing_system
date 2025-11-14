@@ -4,8 +4,8 @@ from typing import Dict, List, Optional, Tuple, Union
 from sqlalchemy import func, extract, text, or_, and_
 from sqlalchemy.orm import Session
 
-from app.models import MenuItem, Order, OrderItem, OrderMode, PaymentMode, DiscountType
-from app.schemas import MenuItemCreate, MenuItemUpdate, OrderCreate, OrderUpdate, DiscountInfo
+from app.models import MenuItem, Order, OrderItem, OrderMode, PaymentMode, DiscountType, FoodPreparationStage, PaymentStatus, Expense, ExpenseType, get_ist_now
+from app.schemas import MenuItemCreate, MenuItemUpdate, OrderCreate, OrderUpdate, DiscountInfo, ExpenseCreate, ExpenseUpdate
 from app.config import settings
 
 
@@ -239,7 +239,9 @@ def create_order(
         total_making_cost=total_making_cost,
         other_costs=other_costs,
         net_amount=net_amount,
-        total_profit=total_profit
+        total_profit=total_profit,
+        food_preparation_stage=order_data.food_preparation_stage.value if hasattr(order_data.food_preparation_stage, 'value') else str(order_data.food_preparation_stage).lower(),
+        payment_status=order_data.payment_status.value if hasattr(order_data.payment_status, 'value') else str(order_data.payment_status).lower()
     )
     
     db.add(db_order)
@@ -268,6 +270,29 @@ def update_order(
         return None
     
     update_data = order_update.dict(exclude_unset=True)
+    
+    # Convert enum values to strings for food_preparation_stage and payment_status
+    if 'food_preparation_stage' in update_data:
+        val = update_data['food_preparation_stage']
+        update_data['food_preparation_stage'] = val.value if hasattr(val, 'value') else str(val).lower()
+    
+    if 'payment_status' in update_data:
+        val = update_data['payment_status']
+        payment_status_str = val.value if hasattr(val, 'value') else str(val).lower()
+        current_status = db_order.payment_status or ""
+        
+        # If payment_status is being updated to PAYMENT_DONE, set payment_completed_at
+        if payment_status_str == "payment_done" and current_status != "payment_done":
+            update_data['payment_completed_at'] = get_ist_now()
+        elif payment_status_str != "payment_done":
+            # If changing from PAYMENT_DONE to something else, clear payment_completed_at
+            update_data['payment_completed_at'] = None
+        update_data['payment_status'] = payment_status_str
+    
+    if 'payment_mode' in update_data:
+        val = update_data['payment_mode']
+        update_data['payment_mode'] = val.value if hasattr(val, 'value') else str(val).lower()
+    
     for key, value in update_data.items():
         setattr(db_order, key, value)
     
@@ -289,7 +314,7 @@ def soft_delete_order(db: Session, order_id: int) -> Optional[Order]:
     
     # Soft delete
     db_order.is_deleted = True
-    db_order.deleted_at = datetime.utcnow()
+    db_order.deleted_at = get_ist_now()
     
     db.commit()
     db.refresh(db_order)
@@ -309,7 +334,67 @@ def soft_delete_order_by_number(db: Session, order_number: str) -> Optional[Orde
     
     # Soft delete
     db_order.is_deleted = True
-    db_order.deleted_at = datetime.utcnow()
+    db_order.deleted_at = get_ist_now()
+    
+    db.commit()
+    db.refresh(db_order)
+    return db_order
+
+
+def get_active_orders(db: Session) -> List[Order]:
+    """Get active orders (Ordered or Preparing, not Payment Done, not Due)"""
+    return db.query(Order).filter(
+        Order.is_deleted.is_(False),
+        Order.food_preparation_stage.in_(["ordered", "preparing"]),
+        Order.payment_status.notin_(["payment_done", "due"]),
+        # Also filter out NULL values (for orders created before migration)
+        Order.food_preparation_stage.isnot(None),
+        Order.payment_status.isnot(None)
+    ).order_by(Order.created_at.desc()).all()
+
+
+def get_due_payments(db: Session) -> List[Order]:
+    """Get orders with pending or due payments"""
+    return db.query(Order).filter(
+        Order.is_deleted.is_(False),
+        Order.payment_status.in_(["pending", "due"]),
+        # Also filter out NULL values (for orders created before migration)
+        Order.payment_status.isnot(None)
+    ).order_by(Order.created_at.desc()).all()
+
+
+def update_order_status(
+    db: Session,
+    order_id: int,
+    food_preparation_stage: Optional[FoodPreparationStage] = None,
+    payment_status: Optional[PaymentStatus] = None,
+    payment_mode: Optional[PaymentMode] = None
+) -> Optional[Order]:
+    """Update order status (preparation stage, payment status, and/or payment mode)"""
+    db_order = get_order(db, order_id)
+    if not db_order:
+        return None
+    
+    if food_preparation_stage is not None:
+        # Convert enum to string value
+        db_order.food_preparation_stage = food_preparation_stage.value if hasattr(food_preparation_stage, 'value') else str(food_preparation_stage).lower()
+    
+    if payment_status is not None:
+        # Convert enum to string value
+        payment_status_str = payment_status.value if hasattr(payment_status, 'value') else str(payment_status).lower()
+        current_status = db_order.payment_status or ""
+        
+        # If payment_status is being updated to PAYMENT_DONE, set payment_completed_at
+        if payment_status_str == "payment_done" and current_status != "payment_done":
+            db_order.payment_completed_at = get_ist_now()
+        elif payment_status_str != "payment_done":
+            # If changing from PAYMENT_DONE to something else, clear payment_completed_at
+            db_order.payment_completed_at = None
+        db_order.payment_status = payment_status_str
+    
+    if payment_mode is not None:
+        # Convert enum to string value
+        db_order.payment_mode = payment_mode.value if hasattr(payment_mode, 'value') else str(payment_mode).lower()
     
     db.commit()
     db.refresh(db_order)
@@ -563,4 +648,180 @@ def get_customer_autocomplete(db: Session, search_query: Optional[str] = None) -
         }
         for item in results
     ]
+
+
+# Expense CRUD operations
+def create_expense(db: Session, expense: ExpenseCreate) -> Expense:
+    """Create a new expense"""
+    db_expense = Expense(
+        date=expense.date,
+        title=expense.title,
+        category=expense.category,
+        expense_type=expense.expense_type.value if isinstance(expense.expense_type, ExpenseType) else expense.expense_type,
+        amount=expense.amount,
+        payment_mode=expense.payment_mode.value if expense.payment_mode and isinstance(expense.payment_mode, PaymentMode) else expense.payment_mode,
+        vendor=expense.vendor,
+        notes=expense.notes,
+        attachment=expense.attachment
+    )
+    db.add(db_expense)
+    db.commit()
+    db.refresh(db_expense)
+    return db_expense
+
+
+def get_expense(db: Session, expense_id: int) -> Optional[Expense]:
+    """Get a single expense by ID"""
+    return db.query(Expense).filter(Expense.id == expense_id).first()
+
+
+def list_expenses(
+    db: Session,
+    skip: int = 0,
+    limit: int = 100,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+    category: Optional[str] = None,
+    expense_type: Optional[str] = None,
+    payment_mode: Optional[str] = None
+) -> Tuple[List[Expense], int]:
+    """List expenses with filters"""
+    query = db.query(Expense)
+    
+    # Apply filters
+    if date_from:
+        query = query.filter(Expense.date >= date_from)
+    if date_to:
+        query = query.filter(Expense.date <= date_to)
+    if category:
+        query = query.filter(Expense.category == category)
+    if expense_type:
+        query = query.filter(Expense.expense_type == expense_type)
+    if payment_mode:
+        query = query.filter(Expense.payment_mode == payment_mode)
+    
+    # Get total count before pagination
+    total = query.count()
+    
+    # Apply pagination and ordering
+    expenses = query.order_by(Expense.date.desc(), Expense.created_at.desc()).offset(skip).limit(limit).all()
+    
+    return expenses, total
+
+
+def update_expense(db: Session, expense_id: int, expense_update: ExpenseUpdate) -> Optional[Expense]:
+    """Update an expense"""
+    db_expense = get_expense(db, expense_id)
+    if not db_expense:
+        return None
+    
+    update_data = expense_update.dict(exclude_unset=True)
+    
+    # Convert enum values to strings for storage
+    if 'expense_type' in update_data and update_data['expense_type']:
+        if isinstance(update_data['expense_type'], ExpenseType):
+            update_data['expense_type'] = update_data['expense_type'].value
+    if 'payment_mode' in update_data and update_data['payment_mode']:
+        if isinstance(update_data['payment_mode'], PaymentMode):
+            update_data['payment_mode'] = update_data['payment_mode'].value
+    
+    for key, value in update_data.items():
+        setattr(db_expense, key, value)
+    
+    db.commit()
+    db.refresh(db_expense)
+    return db_expense
+
+
+def delete_expense(db: Session, expense_id: int) -> Optional[Expense]:
+    """Delete an expense (hard delete)"""
+    db_expense = get_expense(db, expense_id)
+    if not db_expense:
+        return None
+    
+    db.delete(db_expense)
+    db.commit()
+    return db_expense
+
+
+def get_expense_summary(
+    db: Session,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None
+) -> Dict:
+    """Get expense summary with totals and breakdowns"""
+    query = db.query(Expense)
+    
+    # Apply date filters
+    if date_from:
+        query = query.filter(Expense.date >= date_from)
+    if date_to:
+        query = query.filter(Expense.date <= date_to)
+    
+    # Total expenses
+    total_expenses = query.with_entities(func.sum(Expense.amount)).scalar() or Decimal('0')
+    total_count = query.count()
+    
+    # Group by category - create a fresh query
+    category_query = db.query(Expense)
+    if date_from:
+        category_query = category_query.filter(Expense.date >= date_from)
+    if date_to:
+        category_query = category_query.filter(Expense.date <= date_to)
+    
+    category_query = category_query.with_entities(
+        Expense.category,
+        func.sum(Expense.amount).label('total_amount'),
+        func.count(Expense.id).label('count')
+    ).group_by(Expense.category).order_by(func.sum(Expense.amount).desc())
+    
+    by_category = [
+        {
+            "category": row.category,
+            "total_amount": Decimal(str(row.total_amount)) if row.total_amount is not None else Decimal('0'),
+            "count": row.count
+        }
+        for row in category_query.all()
+    ]
+    
+    # Group by month - create a fresh query
+    month_query = db.query(Expense)
+    if date_from:
+        month_query = month_query.filter(Expense.date >= date_from)
+    if date_to:
+        month_query = month_query.filter(Expense.date <= date_to)
+    
+    # For SQLite, use strftime; for PostgreSQL, use to_char
+    try:
+        db_type = str(db.bind.url).split(':')[0] if hasattr(db.bind, 'url') else 'sqlite'
+    except:
+        db_type = 'sqlite'
+    
+    if 'sqlite' in db_type.lower():
+        month_format = func.strftime('%Y-%m', Expense.date)
+    else:
+        # PostgreSQL
+        month_format = func.to_char(Expense.date, 'YYYY-MM')
+    
+    month_query = month_query.with_entities(
+        month_format.label('month'),
+        func.sum(Expense.amount).label('total_amount'),
+        func.count(Expense.id).label('count')
+    ).group_by(month_format).order_by(month_format)
+    
+    by_month = [
+        {
+            "month": str(row.month),
+            "total_amount": Decimal(str(row.total_amount)) if row.total_amount is not None else Decimal('0'),
+            "count": row.count
+        }
+        for row in month_query.all()
+    ]
+    
+    return {
+        "total_expenses": Decimal(str(total_expenses)) if total_expenses is not None else Decimal('0'),
+        "total_count": total_count,
+        "by_category": by_category,
+        "by_month": by_month
+    }
 

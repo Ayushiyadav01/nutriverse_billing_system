@@ -271,6 +271,31 @@ def render_analysis():
             )
             
             st.plotly_chart(fig, use_container_width=True)
+            
+            # Display daily sales table
+            st.subheader("Daily Sales Breakdown")
+            daily_sales_df = df_trend.copy()
+            daily_sales_df['Date'] = daily_sales_df['time_unit'].dt.strftime('%Y-%m-%d')
+            daily_sales_df['Sales (₹)'] = daily_sales_df['sales'].apply(lambda x: f"₹{float(x):,.2f}")
+            daily_sales_df['Orders'] = daily_sales_df['orders_count']
+            display_df = daily_sales_df[['Date', 'Sales (₹)', 'Orders']]
+            
+            st.dataframe(
+                display_df,
+                use_container_width=True,
+                hide_index=True
+            )
+            
+            # Export to CSV
+            csv = daily_sales_df[['Date', 'sales', 'orders_count']].to_csv(index=False)
+            csv = csv.replace('sales', 'Sales (₹)').replace('orders_count', 'Orders')
+            st.download_button(
+                label="Export Daily Sales to CSV",
+                data=csv,
+                file_name=f"daily_sales_{start_date}_{end_date}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
         else:
             st.info("No sales data available for the selected period")
     

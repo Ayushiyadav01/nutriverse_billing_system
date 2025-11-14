@@ -87,6 +87,59 @@ def fetch_customer_suggestions(search_query: Optional[str] = None) -> List[Dict]
     except requests.RequestException:
         return []
 
+def fetch_today_payments() -> float:
+    """Fetch total sales for today"""
+    try:
+        today = datetime.now().date()
+        today_start = datetime.combine(today, datetime.min.time())
+        today_end = datetime.combine(today, datetime.max.time())
+        
+        # Fetch today's orders
+        params = {
+            'date_from': today_start.isoformat(),
+            'date_to': today_end.isoformat(),
+            'limit': 1000
+        }
+        response = requests.get(f"{API_URL}/orders/", params=params)
+        response.raise_for_status()
+        orders = response.json()
+        
+        # Sum up total amounts for all today's orders (regardless of payment status)
+        total = sum(float(order['total_amount']) for order in orders)
+        return total
+    except requests.RequestException as e:
+        st.error(f"Error fetching today's sales: {str(e)}")
+        return 0.0
+
+def fetch_active_orders() -> List[Dict]:
+    """Fetch active orders (Ordered or Preparing, not Payment Done)"""
+    try:
+        response = requests.get(f"{API_URL}/orders/active")
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as e:
+        st.error(f"Error fetching active orders: {str(e)}")
+        return []
+
+def update_order_status_api(order_id: int, food_preparation_stage: Optional[str] = None, 
+                            payment_status: Optional[str] = None, payment_mode: Optional[str] = None) -> bool:
+    """Update order status via API"""
+    try:
+        update_data = {}
+        if food_preparation_stage is not None:
+            update_data["food_preparation_stage"] = food_preparation_stage
+        if payment_status is not None:
+            update_data["payment_status"] = payment_status
+        if payment_mode is not None:
+            update_data["payment_mode"] = payment_mode
+        
+        response = requests.put(f"{API_URL}/orders/{order_id}/status", json=update_data)
+        response.raise_for_status()
+        return True
+    except requests.RequestException as e:
+        st.error(f"Error updating order status: {str(e)}")
+        return False
+
 def initialize_session_state():
     """Initialize session state variables for billing"""
     if 'cart' not in st.session_state:
@@ -288,6 +341,11 @@ def render_billing():
     # Initialize session state
     initialize_session_state()
     
+    # Display today's total payment received at the top
+    today_payments = fetch_today_payments()
+    st.info(f"💰 **Today's Total Sales: ₹{today_payments:,.2f}**")
+    st.divider()
+    
     # Create two columns - left for cart, right for order details
     col1, col2 = st.columns([3, 2])
     
@@ -345,8 +403,8 @@ def render_billing():
                 with qty_col1:
                     qty = st.number_input("Quantity", min_value=1, value=1, step=1, key="selected_qty")
                 with qty_col2:
-                    st.write("")
-                    st.write("")
+                    st.write("&nbsp;", unsafe_allow_html=True)
+                    st.write("&nbsp;", unsafe_allow_html=True)
                     st.button("Add to Cart", use_container_width=True, on_click=add_to_cart_callback)
         
         # Add item by code
@@ -360,8 +418,8 @@ def render_billing():
                 # The value is automatically stored in st.session_state.code_qty_input
                 code_qty = st.number_input("Qty", min_value=1, value=st.session_state.get("code_qty_input", 1), step=1, key="code_qty_input")
             with code_col3:
-                st.write("")
-                st.write("")
+                st.write("&nbsp;", unsafe_allow_html=True)
+                st.write("&nbsp;", unsafe_allow_html=True)
                 st.button("Add", use_container_width=True, on_click=add_by_code_callback)
         
         # Display cart
@@ -387,7 +445,7 @@ def render_billing():
                 with cart_col3:
                     # Use a form to handle quantity updates without infinite loops
                     with st.form(key=f"qty_form_{i}", clear_on_submit=False):
-                        new_qty = st.number_input("", min_value=1, value=item['qty'], step=1, key=f"qty_input_{i}")
+                        new_qty = st.number_input("Quantity", min_value=1, value=item['qty'], step=1, key=f"qty_input_{i}", label_visibility="collapsed")
                         submitted = st.form_submit_button("Update", use_container_width=True)
                         if submitted:
                             update_cart_qty(i, new_qty)
@@ -621,6 +679,91 @@ def render_billing():
                                     st.dataframe(invoice_df, use_container_width=True, hide_index=True)
                                     
                                     st.session_state.show_invoice = False
+        
+        # Active Orders Management Table
+        st.divider()
+        st.subheader("Active Orders Management")
+        
+        active_orders = fetch_active_orders()
+        
+        if active_orders:
+            # Create a DataFrame for display
+            orders_data = []
+            for order in active_orders:
+                orders_data.append({
+                    "Order ID": order['id'],
+                    "Bill No.": order['order_number'],
+                    "Customer": order.get('customer_name', 'N/A'),
+                    "Amount": f"₹{float(order['total_amount']):,.2f}",
+                    "Timestamp": order['timestamp']
+                })
+            
+            orders_df = pd.DataFrame(orders_data)
+            
+            # Display orders with editable status
+            for idx, order in enumerate(active_orders):
+                with st.container():
+                    order_col1, order_col2, order_col3, order_col4, order_col5 = st.columns([2, 2, 2, 2, 1])
+                    
+                    with order_col1:
+                        st.write(f"**{order['order_number']}**")
+                        st.caption(order.get('customer_name', 'N/A'))
+                    
+                    with order_col2:
+                        current_stage = order['food_preparation_stage']
+                        new_stage = st.selectbox(
+                            "Stage",
+                            options=["ordered", "preparing", "completed"],
+                            index=["ordered", "preparing", "completed"].index(current_stage) if current_stage in ["ordered", "preparing", "completed"] else 0,
+                            key=f"stage_{order['id']}"
+                        )
+                    
+                    with order_col3:
+                        current_payment_status = order['payment_status']
+                        payment_status_options = ["pending", "due", "payment_done", "overpaid", "adjusted"]
+                        new_payment_status = st.selectbox(
+                            "Payment Status",
+                            options=payment_status_options,
+                            index=payment_status_options.index(current_payment_status) if current_payment_status in payment_status_options else 0,
+                            key=f"payment_status_{order['id']}"
+                        )
+                    
+                    with order_col4:
+                        current_payment_mode = order['payment_mode']
+                        payment_mode_options = ["cash", "card", "upi", "wallet"]
+                        new_payment_mode = st.selectbox(
+                            "Payment Mode",
+                            options=payment_mode_options,
+                            index=payment_mode_options.index(current_payment_mode) if current_payment_mode in payment_mode_options else 0,
+                            key=f"payment_mode_{order['id']}"
+                        )
+                    
+                    with order_col5:
+                        st.write(f"**₹{float(order['total_amount']):,.2f}**")
+                        if st.button("Update", key=f"update_{order['id']}", use_container_width=True):
+                            # Check if anything changed
+                            changed = False
+                            if new_stage != current_stage:
+                                changed = True
+                            if new_payment_status != current_payment_status:
+                                changed = True
+                            if new_payment_mode != current_payment_mode:
+                                changed = True
+                            
+                            if changed:
+                                success = update_order_status_api(
+                                    order_id=order['id'],
+                                    food_preparation_stage=new_stage,
+                                    payment_status=new_payment_status,
+                                    payment_mode=new_payment_mode
+                                )
+                                if success:
+                                    st.success(f"Order {order['order_number']} updated!")
+                                    st.rerun()
+                    
+                    st.divider()
+        else:
+            st.info("No active orders to display. Orders with status 'Ordered' or 'Preparing' (and not 'Payment Done' or 'Due') will appear here.")
         
         # Last order actions
         if st.session_state.last_order_number:

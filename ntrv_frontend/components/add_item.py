@@ -295,8 +295,8 @@ def render_menu_management():
                         key="item_to_delete"
                     )
                 with col2:
-                    st.write("")
-                    st.write("")
+                    st.write("&nbsp;", unsafe_allow_html=True)
+                    st.write("&nbsp;", unsafe_allow_html=True)
                     st.button("Delete", type="primary", use_container_width=True, on_click=delete_item_callback)
                 
                 # Display success or error message

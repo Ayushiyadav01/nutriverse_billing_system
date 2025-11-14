@@ -5,7 +5,7 @@ from typing import List, Dict
 
 from sqlalchemy.orm import Session
 
-from app.models import MenuItem, Order, OrderItem, OrderMode, PaymentMode, DiscountType
+from app.models import MenuItem, Order, OrderItem, OrderMode, PaymentMode, DiscountType, get_ist_now
 from app.db import SessionLocal, init_db
 from app.crud import generate_order_number
 
@@ -100,7 +100,7 @@ def create_sample_orders(db: Session, menu_items: List[MenuItem], num_orders: in
     orders = []
     
     # Start date for sample orders (30 days ago)
-    start_date = datetime.now() - timedelta(days=30)
+    start_date = get_ist_now() - timedelta(days=30)
     
     for i in range(num_orders):
         # Generate random order data

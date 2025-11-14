@@ -10,6 +10,12 @@ A complete order, billing, and analytics system for a cloud-kitchen / gym-cafete
   - Calculate totals, taxes, and discounts
   - Track costs and profits
   - Generate invoices
+- **Expenses Management**:
+  - Track business expenses with categories (Raw Materials, Packaging, Utilities, Staff Salary, Logistics, Marketing, Rent, Maintenance)
+  - Support for one-time and recurrent expenses
+  - Filter and view expenses by date range, category, type, and payment mode
+  - Expense analytics with category breakdowns and monthly trends
+  - Upload and attach bills/receipts to expenses
 - **Analytics Dashboard**:
   - Sales metrics and KPIs
   - Visual charts for top-selling items, sales trends, and hourly sales
@@ -75,15 +81,20 @@ billing_system/
    python scripts/init_db.py
    ```
 
-4. **Start the backend server**:
+4. **Seed sample expense data** (optional):
+   ```bash
+   python scripts/seed_expenses.py
+   ```
+
+5. **Start the backend server**:
    ```bash
    ./scripts/run_backend.sh  # On Windows: python -m uvicorn app.main:app --reload --port 8000
    ```
 
-5. **Set up the frontend** (in a new terminal):
+6. **Set up the frontend** (in a new terminal):
    ```bash
    cd ntrv_frontend
-   python -m venv venv
+   python3 -m venv venv
    source venv/bin/activate  # On Windows: venv\Scripts\activate
    pip install -r requirements.txt
    ```
@@ -145,6 +156,23 @@ billing_system/
 6. Click "Save Order" to create the order
 7. View or duplicate previous orders from the "Last Order" section
 
+### Expenses Management
+
+1. Navigate to the "Expenses" section
+2. **Add Expense Tab**:
+   - Fill in expense details (date, title, category, type, amount, payment mode, vendor, notes)
+   - Optionally upload a bill/receipt attachment
+   - Click "Add Expense" to save
+3. **View Expenses Tab**:
+   - Filter expenses by date range, category, expense type, and payment mode
+   - View expense list with summary metrics
+   - Export expenses to CSV
+4. **Analysis Tab**:
+   - View expense summary with KPIs (total expenses, percentage change vs prior period, highest category)
+   - Visualize expenses by category (pie chart)
+   - View monthly expense trends (bar chart)
+   - Review category breakdown table
+
 ### Analytics
 
 1. Navigate to the "Analysis" section
@@ -167,6 +195,14 @@ The backend provides the following API endpoints:
   - `POST /api/orders/` - Create a new order
   - `GET /api/orders/` - List orders with filters
   - `GET /api/orders/{id}` - Get a specific order
+
+- **Expenses**:
+  - `POST /api/expenses/` - Create a new expense
+  - `GET /api/expenses/` - List expenses with filters (date_from, date_to, category, expense_type, payment_mode, skip, limit)
+  - `GET /api/expenses/{id}` - Get a specific expense
+  - `PUT /api/expenses/{id}` - Update an expense
+  - `DELETE /api/expenses/{id}` - Delete an expense
+  - `GET /api/expenses/summary` - Get expense summary with totals and breakdowns by category and month
 
 - **Analytics**:
   - `GET /api/analytics/summary` - Get sales summary
@@ -203,6 +239,9 @@ The backend provides the following API endpoints:
 ```bash
 cd ntrv_server
 pytest app/tests/
+
+# Run specific test file
+pytest app/tests/test_expenses.py -v
 ```
 
 ## License
@@ -218,3 +257,19 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 start server:
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+streamlit run streamlit_app.py --server.port 8501
+
+
+
+cd /home/ayushi/MyProjects/billing_system/ntrv_server
+python3 -m venv venv               # only once if you don’t have a venv yet
+source venv/bin/activate          # on Windows use: venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+
+cd /home/ayushi/MyProjects/billing_system/ntrv_frontend
+python3 -m venv venv               # only once if needed
+source venv/bin/activate          # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+streamlit run streamlit_app.py --server.port 8501
