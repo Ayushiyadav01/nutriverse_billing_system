@@ -7,6 +7,11 @@ from sqlalchemy.orm import Session
 from app.models import MenuItem, Order, OrderItem, OrderMode, PaymentMode, DiscountType, FoodPreparationStage, PaymentStatus, Expense, ExpenseType, get_ist_now
 from app.schemas import MenuItemCreate, MenuItemUpdate, OrderCreate, OrderUpdate, DiscountInfo, ExpenseCreate, ExpenseUpdate
 from app.config import settings
+from decimal import ROUND_HALF_UP
+
+def quantize_amount(amount: Decimal) -> Decimal:
+    """Quantize amount to 2 decimal places"""
+    return amount.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
 
 # Menu Item CRUD operations
@@ -177,9 +182,10 @@ def create_order(
         
         # Calculate line totals
         qty = item_data.qty
-        unit_price = menu_item.price
+        unit_price = menu_item.price  # MRP (for reference)
+        unit_sold_price = item_data.sold_price if item_data.sold_price is not None else unit_price  # Use sold_price if provided, else MRP
         unit_cost = menu_item.cost
-        line_total = unit_price * qty
+        line_total = unit_sold_price * qty  # Use sold price for calculations
         line_cost = unit_cost * qty
         
         # Add to running totals
@@ -187,15 +193,20 @@ def create_order(
         total_making_cost += line_cost
         
         # Create order item
-        order_items.append({
+        order_item_dict = {
             "menu_item_id": menu_item.id,
             "item_name": menu_item.name,
             "qty": qty,
-            "unit_price": unit_price,
+            "unit_price": unit_price,  # Store MRP for reference
             "line_total": line_total,
             "unit_cost": unit_cost,
             "line_cost": line_cost
-        })
+        }
+        # Only add unit_sold_price if it differs from MRP (for backward compatibility)
+        if unit_sold_price != unit_price:
+            order_item_dict["unit_sold_price"] = unit_sold_price
+        
+        order_items.append(order_item_dict)
     
     # Calculate discount
     discount_type = order_data.discount.type

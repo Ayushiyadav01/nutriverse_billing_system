@@ -196,20 +196,25 @@ def initialize_session_state():
     if 'show_invoice' not in st.session_state:
         st.session_state.show_invoice = False
 
-def add_to_cart(menu_item: Dict, qty: int):
+def add_to_cart(menu_item: Dict, qty: int, sold_price: Optional[float] = None):
     """Add an item to the cart"""
     # Check if item already in cart
     for item in st.session_state.cart:
         if item['id'] == menu_item['id']:
             item['qty'] += qty
+            # Update sold_price if provided
+            if sold_price is not None:
+                item['sold_price'] = sold_price
             return
     
     # Add new item
+    mrp = float(menu_item['price'])
     cart_item = {
         'id': menu_item['id'],
         'code': menu_item['code'],
         'name': menu_item['name'],
-        'price': float(menu_item['price']),
+        'price': mrp,  # MRP for reference
+        'sold_price': sold_price if sold_price is not None else mrp,  # Sold At price (defaults to MRP)
         'cost': float(menu_item['cost']),
         'qty': qty
     }
@@ -223,7 +228,8 @@ def add_to_cart_callback():
         if menu_items:
             menu_df = pd.DataFrame(menu_items)
             selected_item_data = menu_df.loc[menu_df['id'] == st.session_state.selected_item_id].iloc[0].to_dict()
-            add_to_cart(selected_item_data, st.session_state.selected_qty)
+            sold_price = st.session_state.get('selected_sold_at', None)
+            add_to_cart(selected_item_data, st.session_state.selected_qty, sold_price)
             st.session_state.cart_updated = True
 
 def add_by_code_callback():
@@ -231,11 +237,12 @@ def add_by_code_callback():
     # Get the item code from session state (already stored by the widget)
     item_code = st.session_state.get("item_code_input", "").upper()
     code_qty = st.session_state.get("code_qty_input", 1)
+    code_sold_at = st.session_state.get("code_sold_at", None)
     
     if item_code:
         item = fetch_menu_item_by_code(item_code)
         if item:
-            add_to_cart(item, code_qty)
+            add_to_cart(item, code_qty, code_sold_at)
             st.session_state.cart_updated = True
             # Note: We can't directly modify widget values, so we'll just show success
         else:
@@ -273,7 +280,8 @@ def clear_cart_callback():
 
 def calculate_totals() -> Dict:
     """Calculate order totals based on cart and discounts"""
-    subtotal = sum(item['price'] * item['qty'] for item in st.session_state.cart)
+    # Use sold_price if available, otherwise fallback to price (MRP)
+    subtotal = sum(item.get('sold_price', item['price']) * item['qty'] for item in st.session_state.cart)
     total_cost = sum(item['cost'] * item['qty'] for item in st.session_state.cart)
     
     # Calculate discount
@@ -399,17 +407,30 @@ def render_billing():
                 # The selected_item is automatically stored in st.session_state.selected_item_id
                 # No need to assign it again
                 
-                qty_col1, qty_col2 = st.columns([3, 1])
+                # Get selected item's MRP for display
+                selected_item_mrp = float(filtered_df.loc[filtered_df['id'] == selected_item, 'price'].iloc[0])
+                
+                qty_col1, qty_col2, qty_col3 = st.columns([2, 2, 1])
                 with qty_col1:
                     qty = st.number_input("Quantity", min_value=1, value=1, step=1, key="selected_qty")
                 with qty_col2:
+                    sold_at = st.number_input(
+                        "Sold At (₹)",
+                        min_value=0.01,
+                        value=float(selected_item_mrp),
+                        step=1.0,
+                        format="%.2f",
+                        key="selected_sold_at",
+                        help="Actual sale price (defaults to MRP)"
+                    )
+                with qty_col3:
                     st.write("&nbsp;", unsafe_allow_html=True)
                     st.write("&nbsp;", unsafe_allow_html=True)
                     st.button("Add to Cart", use_container_width=True, on_click=add_to_cart_callback)
         
         # Add item by code
         with st.expander("Add by Code"):
-            code_col1, code_col2, code_col3 = st.columns([2, 1, 1])
+            code_col1, code_col2, code_col3, code_col4 = st.columns([2, 1, 1, 1])
             with code_col1:
                 # The value is automatically stored in st.session_state.item_code_input
                 # We'll handle uppercase conversion in the callback
@@ -418,6 +439,22 @@ def render_billing():
                 # The value is automatically stored in st.session_state.code_qty_input
                 code_qty = st.number_input("Qty", min_value=1, value=st.session_state.get("code_qty_input", 1), step=1, key="code_qty_input")
             with code_col3:
+                # Get MRP if item exists
+                code_mrp = None
+                if item_code:
+                    item = fetch_menu_item_by_code(item_code)
+                    if item:
+                        code_mrp = float(item['price'])
+                code_sold_at = st.number_input(
+                    "Sold At",
+                    min_value=0.01,
+                    value=code_mrp if code_mrp else 0.01,  # Use 0.01 as default instead of 0.0
+                    step=1.0,
+                    format="%.2f",
+                    key="code_sold_at",
+                    disabled=code_mrp is None
+                )
+            with code_col4:
                 st.write("&nbsp;", unsafe_allow_html=True)
                 st.write("&nbsp;", unsafe_allow_html=True)
                 st.button("Add", use_container_width=True, on_click=add_by_code_callback)
@@ -428,36 +465,78 @@ def render_billing():
         if not st.session_state.cart:
             st.info("Cart is empty")
         else:
-            # Create a DataFrame from the cart
+            # Ensure all items have sold_price (for backward compatibility)
+            for item in st.session_state.cart:
+                if 'sold_price' not in item:
+                    item['sold_price'] = item['price']
+            
+            # Create a DataFrame from the cart (for reference, but we display manually)
             cart_df = pd.DataFrame(st.session_state.cart)
-            cart_df['line_total'] = cart_df['price'] * cart_df['qty']
+            cart_df['line_total'] = cart_df['sold_price'] * cart_df['qty']
             
             # Display the cart as a table
             for i, item in enumerate(st.session_state.cart):
-                cart_col1, cart_col2, cart_col3, cart_col4, cart_col5 = st.columns([3, 1, 1, 1, 1])
+                # Ensure sold_price exists (for backward compatibility)
+                if 'sold_price' not in item:
+                    item['sold_price'] = item['price']
+                
+                cart_col1, cart_col2, cart_col3, cart_col4, cart_col5, cart_col6, cart_col7 = st.columns([2.5, 1, 1, 1, 1, 1, 0.5])
                 
                 with cart_col1:
                     st.write(f"**{item['code']} - {item['name']}**")
+                    st.caption(f"MRP: ₹{item['price']:.2f}")
                 
                 with cart_col2:
-                    st.write(f"₹{item['price']:.2f}")
+                    # Sold At price input
+                    with st.form(key=f"sold_price_form_{i}", clear_on_submit=False):
+                        new_sold_price = st.number_input(
+                            "Sold At",
+                            min_value=0.01,
+                            value=float(item['sold_price']),
+                            step=1.0,
+                            format="%.2f",
+                            key=f"sold_price_input_{i}",
+                            label_visibility="collapsed"
+                        )
+                        submitted_price = st.form_submit_button("✓", use_container_width=True)
+                        if submitted_price:
+                            item['sold_price'] = new_sold_price
+                            st.session_state.cart_updated = True
+                            st.rerun()
                 
                 with cart_col3:
                     # Use a form to handle quantity updates without infinite loops
                     with st.form(key=f"qty_form_{i}", clear_on_submit=False):
                         new_qty = st.number_input("Quantity", min_value=1, value=item['qty'], step=1, key=f"qty_input_{i}", label_visibility="collapsed")
-                        submitted = st.form_submit_button("Update", use_container_width=True)
+                        submitted = st.form_submit_button("✓", use_container_width=True)
                         if submitted:
                             update_cart_qty(i, new_qty)
                             st.session_state.cart_updated = True
+                            st.rerun()
                 
                 with cart_col4:
-                    st.write(f"₹{item['price'] * item['qty']:.2f}")
+                    line_total = item['sold_price'] * item['qty']
+                    st.write(f"**₹{line_total:.2f}**")
                 
                 with cart_col5:
+                    # Show price difference if sold_price differs from MRP
+                    if item['sold_price'] != item['price']:
+                        diff = item['sold_price'] - item['price']
+                        if diff < 0:
+                            st.caption(f"↓ ₹{abs(diff):.2f}")
+                        else:
+                            st.caption(f"↑ ₹{diff:.2f}")
+                    else:
+                        st.caption("MRP")
+                
+                with cart_col6:
+                    st.write("&nbsp;", unsafe_allow_html=True)
+                
+                with cart_col7:
                     if st.button("🗑️", key=f"remove_{i}"):
                         remove_from_cart(i)
                         st.session_state.cart_updated = True
+                        st.rerun()
                 
                 st.divider()
             
@@ -623,10 +702,15 @@ def render_billing():
                     # Prepare order data
                     order_items = []
                     for item in st.session_state.cart:
-                        order_items.append({
+                        item_data = {
                             "menu_item_id": item['id'],
                             "qty": item['qty']
-                        })
+                        }
+                        # Add sold_price if it differs from MRP
+                        sold_price = item.get('sold_price', item['price'])
+                        if sold_price != item['price']:
+                            item_data["sold_price"] = str(sold_price)
+                        order_items.append(item_data)
                     
                     order_data = {
                         "customer_name": st.session_state.customer_name,
@@ -674,8 +758,14 @@ def render_billing():
                                     
                                     st.subheader("Items")
                                     invoice_df = pd.DataFrame(order['items'])
-                                    invoice_df = invoice_df[['item_name', 'qty', 'unit_price', 'line_total']]
-                                    invoice_df.columns = ['Item', 'Qty', 'Unit Price', 'Total']
+                                    # Include sold_price if available
+                                    if 'unit_sold_price' in invoice_df.columns:
+                                        invoice_df['display_price'] = invoice_df['unit_sold_price'].fillna(invoice_df['unit_price'])
+                                        invoice_df = invoice_df[['item_name', 'qty', 'display_price', 'line_total']]
+                                        invoice_df.columns = ['Item', 'Qty', 'Sold At', 'Total']
+                                    else:
+                                        invoice_df = invoice_df[['item_name', 'qty', 'unit_price', 'line_total']]
+                                        invoice_df.columns = ['Item', 'Qty', 'Unit Price', 'Total']
                                     st.dataframe(invoice_df, use_container_width=True, hide_index=True)
                                     
                                     st.session_state.show_invoice = False

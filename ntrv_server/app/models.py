@@ -129,8 +129,9 @@ class OrderItem(Base):
     # Denormalized fields for historical record
     item_name = Column(String(100), nullable=False)
     qty = Column(Integer, nullable=False)
-    unit_price = Column(Numeric(10, 2), nullable=False)
-    line_total = Column(Numeric(10, 2), nullable=False)  # qty * unit_price
+    unit_price = Column(Numeric(10, 2), nullable=False)  # MRP (for reference)
+    unit_sold_price = Column(Numeric(10, 2), nullable=True)  # Actual sold price (optional, defaults to unit_price)
+    line_total = Column(Numeric(10, 2), nullable=False)  # qty * unit_sold_price (or unit_price if unit_sold_price is None)
     unit_cost = Column(Numeric(10, 2), nullable=False)
     line_cost = Column(Numeric(10, 2), nullable=False)  # qty * unit_cost
     

@@ -77,7 +77,14 @@ class OrderItemBase(BaseModel):
 
 
 class OrderItemCreate(OrderItemBase):
-    pass
+    sold_price: Optional[Decimal] = None  # Optional sold price (overrides MRP if provided)
+    
+    @field_validator('sold_price')
+    @classmethod
+    def validate_sold_price(cls, v):
+        if v is not None and v < 0:
+            raise ValueError("Sold price cannot be negative")
+        return v
 
 
 class OrderItem(BaseModel):
@@ -85,7 +92,8 @@ class OrderItem(BaseModel):
     menu_item_id: int
     item_name: str
     qty: int
-    unit_price: Decimal
+    unit_price: Decimal  # MRP
+    unit_sold_price: Optional[Decimal] = None  # Actual sold price
     line_total: Decimal
     unit_cost: Decimal
     line_cost: Decimal

@@ -66,6 +66,14 @@ def _add_missing_columns():
         if 'payment_completed_at' not in columns:
             cursor.execute("ALTER TABLE orders ADD COLUMN payment_completed_at DATETIME")
         
+        # Check order_items table columns
+        cursor.execute("PRAGMA table_info(order_items)")
+        order_item_columns = [column[1] for column in cursor.fetchall()]
+        
+        # Add unit_sold_price column if it doesn't exist
+        if 'unit_sold_price' not in order_item_columns:
+            cursor.execute("ALTER TABLE order_items ADD COLUMN unit_sold_price NUMERIC(10, 2)")
+        
         conn.commit()
         conn.close()
     except Exception as e:
