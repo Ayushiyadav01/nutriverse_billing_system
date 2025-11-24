@@ -7,6 +7,7 @@ from components.customer_details import render_customer_details
 from components.order_history import render_order_history
 from components.due_payments import render_due_payments
 from components.expense import render_expenses
+from components.customer_balance import render_customer_balance
 
 # Set page config
 st.set_page_config(
@@ -53,7 +54,7 @@ st.markdown("<p class='sub-header'>Order, Billing & Analytics System</p>", unsaf
 
 # Sidebar navigation
 st.sidebar.title("Navigation")
-page = st.sidebar.radio("Go to", ["Menu Management", "Billing", "Due Payments", "Expenses", "Analysis", "Customer Details", "Order History"])
+page = st.sidebar.radio("Go to", ["Menu Management", "Billing", "Due Payments", "Customer Balance", "Expenses", "Analysis", "Customer Details", "Order History"])
 
 # Display the selected page
 if page == "Menu Management":
@@ -62,6 +63,8 @@ elif page == "Billing":
     render_billing()
 elif page == "Due Payments":
     render_due_payments()
+elif page == "Customer Balance":
+    render_customer_balance()
 elif page == "Expenses":
     render_expenses()
 elif page == "Analysis":

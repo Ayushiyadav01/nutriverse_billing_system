@@ -74,6 +74,25 @@ def _add_missing_columns():
         if 'unit_sold_price' not in order_item_columns:
             cursor.execute("ALTER TABLE order_items ADD COLUMN unit_sold_price NUMERIC(10, 2)")
         
+        # Check if customers table exists
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='customers'")
+        customers_table_exists = cursor.fetchone() is not None
+        
+        if not customers_table_exists:
+            # Create customers table
+            cursor.execute("""
+                CREATE TABLE customers (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name VARCHAR(100) NOT NULL,
+                    phone VARCHAR(20),
+                    balance NUMERIC(10, 2) DEFAULT 0 NOT NULL,
+                    created_at DATETIME,
+                    updated_at DATETIME
+                )
+            """)
+            cursor.execute("CREATE INDEX ix_customers_name ON customers(name)")
+            cursor.execute("CREATE INDEX ix_customers_phone ON customers(phone)")
+        
         conn.commit()
         conn.close()
     except Exception as e:

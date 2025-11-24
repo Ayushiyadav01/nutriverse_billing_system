@@ -454,3 +454,60 @@ def get_expense(expense_id: int, db: Session = Depends(get_db)):
         )
     return db_expense
 
+
+# Customer Balance endpoints
+@app.get("/api/customers/balance")
+def get_customer_balance(
+    name: str = Query(..., description="Customer name"),
+    phone: Optional[str] = Query(None, description="Customer phone (optional)"),
+    db: Session = Depends(get_db)
+):
+    """Get customer balance by name and optionally phone"""
+    balance = crud.get_customer_balance_by_name(db, name, phone)
+    if balance is None:
+        # Customer doesn't exist, return 0 balance
+        return {"balance": Decimal('0'), "exists": False}
+    return {"balance": balance, "exists": True}
+
+
+@app.get("/api/customers/", response_model=List[schemas.Customer])
+def get_all_customers(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(1000, ge=1, le=10000),
+    db: Session = Depends(get_db)
+):
+    """Get all customers with their balances"""
+    return crud.get_all_customers(db, skip=skip, limit=limit)
+
+
+@app.post("/api/customers/{customer_id}/balance", response_model=schemas.Customer)
+def update_customer_balance(
+    customer_id: int,
+    balance_update: schemas.CustomerBalanceUpdate,
+    db: Session = Depends(get_db)
+):
+    """Manually update customer balance"""
+    customer = crud.update_customer_balance(db, customer_id, balance_update.balance)
+    if customer is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Customer with ID {customer_id} not found"
+        )
+    return customer
+
+
+@app.post("/api/customers/{customer_id}/payment", response_model=schemas.Customer)
+def add_customer_payment(
+    customer_id: int,
+    payment: schemas.CustomerPaymentAdd,
+    db: Session = Depends(get_db)
+):
+    """Add payment to customer balance (increases balance/credit)"""
+    customer = crud.add_customer_payment(db, customer_id, payment.amount, payment.notes)
+    if customer is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Customer with ID {customer_id} not found"
+        )
+    return customer
+

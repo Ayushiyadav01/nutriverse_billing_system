@@ -87,6 +87,31 @@ def fetch_customer_suggestions(search_query: Optional[str] = None) -> List[Dict]
     except requests.RequestException:
         return []
 
+def fetch_customer_balance(name: str, phone: Optional[str] = None) -> Optional[Dict]:
+    """Fetch customer balance by name and optionally phone"""
+    try:
+        params = {"name": name}
+        if phone:
+            params["phone"] = phone
+        response = requests.get(f"{API_URL}/customers/balance", params=params)
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException:
+        return None
+
+def update_customer_balance_api(customer_id: int, balance: float) -> Optional[Dict]:
+    """Update customer balance manually"""
+    try:
+        response = requests.post(
+            f"{API_URL}/customers/{customer_id}/balance",
+            json={"balance": str(balance)}
+        )
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as e:
+        st.error(f"Error updating customer balance: {str(e)}")
+        return None
+
 def fetch_today_payments() -> float:
     """Fetch total sales for today"""
     try:
@@ -195,6 +220,12 @@ def initialize_session_state():
     
     if 'show_invoice' not in st.session_state:
         st.session_state.show_invoice = False
+    
+    if 'customer_balance' not in st.session_state:
+        st.session_state.customer_balance = None
+    
+    if 'customer_paid_amount' not in st.session_state:
+        st.session_state.customer_paid_amount = None
 
 def add_to_cart(menu_item: Dict, qty: int, sold_price: Optional[float] = None):
     """Add an item to the cart"""
@@ -323,6 +354,8 @@ def clear_cart():
     st.session_state.notes = ""
     st.session_state.discount_type = "none"
     st.session_state.discount_value = 0.0
+    st.session_state.customer_balance = None
+    st.session_state.customer_paid_amount = None
 
 def view_invoice_callback():
     """Callback function for viewing invoice"""
@@ -559,6 +592,10 @@ def render_billing():
         # Update customer_name in session state when input changes
         if customer_name_input != st.session_state.customer_name:
             st.session_state.customer_name = customer_name_input
+            # Reset balance and paid amount when customer name changes
+            if not customer_name_input or not customer_name_input.strip():
+                st.session_state.customer_balance = None
+                st.session_state.customer_paid_amount = None
             # Reset selection when user types manually
             if 'last_selected_suggestion' in st.session_state:
                 del st.session_state.last_selected_suggestion
@@ -617,6 +654,50 @@ def render_billing():
         # Update phone in session state
         if phone_input != st.session_state.phone:
             st.session_state.phone = phone_input
+        
+        # Fetch and display customer balance if customer name is provided
+        if st.session_state.customer_name and st.session_state.customer_name.strip():
+            balance_info = fetch_customer_balance(st.session_state.customer_name, st.session_state.phone if st.session_state.phone else None)
+            if balance_info:
+                balance_value = float(balance_info['balance']) if isinstance(balance_info['balance'], (int, float, str)) else float(balance_info['balance'])
+                st.session_state.customer_balance = balance_value
+                balance_color = "green" if balance_value >= 0 else "red"
+                balance_text = "Available Balance" if balance_value >= 0 else "Amount Owed"
+                st.markdown(f"<span style='color: {balance_color}; font-weight: bold;'>{balance_text}: ₹{abs(balance_value):,.2f}</span>", unsafe_allow_html=True)
+            else:
+                st.session_state.customer_balance = 0.0
+        else:
+            st.session_state.customer_balance = None
+        
+        # Customer Paid Amount input (only show if customer is selected and cart has items)
+        if st.session_state.customer_name and st.session_state.customer_name.strip() and st.session_state.cart:
+            st.divider()
+            st.subheader("Payment")
+            customer_paid = st.number_input(
+                "Customer Paid Amount (₹)",
+                min_value=0.0,
+                value=float(st.session_state.customer_paid_amount) if st.session_state.customer_paid_amount is not None else 0.0,
+                step=0.01,
+                format="%.2f",
+                key="customer_paid_input"
+            )
+            st.session_state.customer_paid_amount = customer_paid
+            
+            # Calculate and display remaining balance after payment
+            if st.session_state.customer_balance is not None:
+                totals = calculate_totals()
+                total_bill = totals['total']
+                old_balance = st.session_state.customer_balance
+                new_balance = old_balance + customer_paid - total_bill
+                
+                st.markdown("---")
+                st.write(f"**Bill Amount:** ₹{total_bill:,.2f}")
+                st.write(f"**Current Balance:** ₹{old_balance:,.2f}")
+                st.write(f"**Paid Amount:** ₹{customer_paid:,.2f}")
+                
+                balance_color = "green" if new_balance >= 0 else "red"
+                balance_text = "New Balance (Credit)" if new_balance >= 0 else "New Balance (Owed)"
+                st.markdown(f"<span style='color: {balance_color}; font-weight: bold; font-size: 1.1em;'>**{balance_text}: ₹{abs(new_balance):,.2f}**</span>", unsafe_allow_html=True)
         
         # Order mode and payment mode
         order_col1, order_col2 = st.columns(2)
@@ -725,6 +806,10 @@ def render_billing():
                         },
                         "items": order_items
                     }
+                    
+                    # Add customer_paid_amount if provided
+                    if st.session_state.customer_paid_amount is not None and st.session_state.customer_paid_amount > 0:
+                        order_data["customer_paid_amount"] = str(st.session_state.customer_paid_amount)
                     
                     # Create order via API
                     result = create_order(order_data)

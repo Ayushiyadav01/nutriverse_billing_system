@@ -142,6 +142,20 @@ class OrderItem(Base):
         return f"<OrderItem {self.item_name}: {self.qty} x {self.unit_price}>"
 
 
+class Customer(Base):
+    __tablename__ = "customers"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False, index=True)
+    phone = Column(String(20), nullable=True, index=True)
+    balance = Column(Numeric(10, 2), default=Decimal('0'), nullable=False)  # Positive = credit, Negative = owes
+    created_at = Column(DateTime, default=get_ist_now)
+    updated_at = Column(DateTime, default=get_ist_now, onupdate=get_ist_now)
+    
+    def __repr__(self):
+        return f"<Customer {self.name}: Balance ₹{self.balance}>"
+
+
 # Expense Categories - constants for recommended categories
 EXPENSE_CATEGORIES = [
     "Raw Materials",

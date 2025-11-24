@@ -139,6 +139,7 @@ class OrderBase(BaseModel):
 class OrderCreate(OrderBase):
     items: List[OrderItemCreate]
     discount: DiscountInfo = Field(default_factory=lambda: DiscountInfo())
+    customer_paid_amount: Optional[Decimal] = None  # Optional amount customer paid
     
     @field_validator('items')
     @classmethod
@@ -377,6 +378,42 @@ class OrderStatusUpdate(BaseModel):
     food_preparation_stage: Optional[FoodPreparationStage] = None
     payment_status: Optional[PaymentStatus] = None
     payment_mode: Optional[PaymentMode] = None
+
+
+# Customer Schemas
+class CustomerBase(BaseModel):
+    name: str
+    phone: Optional[str] = None
+
+
+class CustomerCreate(CustomerBase):
+    balance: Decimal = Decimal('0')
+
+
+class CustomerUpdate(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    balance: Optional[Decimal] = None
+
+
+class Customer(BaseModel):
+    id: int
+    name: str
+    phone: Optional[str]
+    balance: Decimal
+    created_at: datetime
+    updated_at: datetime
+    
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CustomerBalanceUpdate(BaseModel):
+    balance: Decimal
+
+
+class CustomerPaymentAdd(BaseModel):
+    amount: Decimal
+    notes: Optional[str] = None
 
 
 # Analytics Schemas

@@ -4,8 +4,8 @@ from typing import Dict, List, Optional, Tuple, Union
 from sqlalchemy import func, extract, text, or_, and_
 from sqlalchemy.orm import Session
 
-from app.models import MenuItem, Order, OrderItem, OrderMode, PaymentMode, DiscountType, FoodPreparationStage, PaymentStatus, Expense, ExpenseType, get_ist_now
-from app.schemas import MenuItemCreate, MenuItemUpdate, OrderCreate, OrderUpdate, DiscountInfo, ExpenseCreate, ExpenseUpdate
+from app.models import MenuItem, Order, OrderItem, OrderMode, PaymentMode, DiscountType, FoodPreparationStage, PaymentStatus, Expense, ExpenseType, Customer, get_ist_now
+from app.schemas import MenuItemCreate, MenuItemUpdate, OrderCreate, OrderUpdate, DiscountInfo, ExpenseCreate, ExpenseUpdate, CustomerCreate, CustomerUpdate
 from app.config import settings
 from decimal import ROUND_HALF_UP
 
@@ -265,6 +265,33 @@ def create_order(
             **item_data
         )
         db.add(db_order_item)
+    
+    # Handle customer balance update if customer_name is provided
+    if order_data.customer_name:
+        customer = get_or_create_customer(db, order_data.customer_name, order_data.phone)
+        if customer:
+            # Determine customer_paid_amount
+            if order_data.customer_paid_amount is not None:
+                # Use provided customer_paid_amount
+                customer_paid = order_data.customer_paid_amount
+            else:
+                # Infer from payment_status
+                payment_status_str = order_data.payment_status.value if hasattr(order_data.payment_status, 'value') else str(order_data.payment_status).lower()
+                if payment_status_str == "payment_done":
+                    # Assume full payment
+                    customer_paid = total_amount
+                elif payment_status_str in ["due", "pending"]:
+                    # Assume no payment
+                    customer_paid = Decimal('0')
+                else:
+                    # For other statuses, assume no payment
+                    customer_paid = Decimal('0')
+            
+            # Calculate new balance: old_balance + customer_paid_amount - total_bill_amount
+            new_balance = customer.balance + customer_paid - total_amount
+            customer.balance = quantize_amount(new_balance)
+            customer.updated_at = get_ist_now()
+            db.add(customer)
     
     db.commit()
     db.refresh(db_order)
@@ -835,4 +862,128 @@ def get_expense_summary(
         "by_category": by_category,
         "by_month": by_month
     }
+
+
+# Customer CRUD operations
+def get_customer_by_name_and_phone(db: Session, name: str, phone: Optional[str] = None) -> Optional[Customer]:
+    """Get customer by name and optionally phone"""
+    if phone:
+        return db.query(Customer).filter(
+            Customer.name == name,
+            Customer.phone == phone
+        ).first()
+    else:
+        return db.query(Customer).filter(Customer.name == name).first()
+
+
+def get_customer(db: Session, customer_id: int) -> Optional[Customer]:
+    """Get customer by ID"""
+    return db.query(Customer).filter(Customer.id == customer_id).first()
+
+
+def get_or_create_customer(db: Session, name: str, phone: Optional[str] = None) -> Customer:
+    """Get existing customer or create a new one"""
+    customer = get_customer_by_name_and_phone(db, name, phone)
+    if not customer:
+        customer = Customer(name=name, phone=phone, balance=Decimal('0'))
+        db.add(customer)
+        db.flush()
+    return customer
+
+
+def update_customer_balance(db: Session, customer_id: int, new_balance: Decimal) -> Optional[Customer]:
+    """Update customer balance manually"""
+    customer = get_customer(db, customer_id)
+    if not customer:
+        return None
+    customer.balance = quantize_amount(new_balance)
+    customer.updated_at = get_ist_now()
+    db.add(customer)
+    db.commit()
+    db.refresh(customer)
+    return customer
+
+
+def get_all_customers(db: Session, skip: int = 0, limit: int = 1000) -> List[Customer]:
+    """Get all customers with their balances"""
+    return db.query(Customer).order_by(Customer.name).offset(skip).limit(limit).all()
+
+
+def add_customer_payment(db: Session, customer_id: int, payment_amount: Decimal, notes: Optional[str] = None) -> Optional[Customer]:
+    """Add payment to customer balance (increases balance)"""
+    customer = get_customer(db, customer_id)
+    if not customer:
+        return None
+    # Add payment amount to balance (positive amount increases balance/credit)
+    customer.balance = quantize_amount(customer.balance + payment_amount)
+    customer.updated_at = get_ist_now()
+    db.add(customer)
+    db.commit()
+    db.refresh(customer)
+    return customer
+
+
+def calculate_balance_from_orders(db: Session, name: str, phone: Optional[str] = None) -> Decimal:
+    """Calculate customer balance from all historical orders.
+    For orders without customer_paid_amount, infer from payment_status."""
+    query = db.query(Order).filter(
+        Order.customer_name == name,
+        Order.is_deleted.is_(False)
+    )
+    
+    if phone:
+        query = query.filter(Order.phone == phone)
+    else:
+        # If no phone provided, match orders with no phone or empty phone
+        query = query.filter(
+            or_(
+                Order.phone.is_(None),
+                Order.phone == ""
+            )
+        )
+    
+    orders = query.all()
+    balance = Decimal('0')
+    
+    for order in orders:
+        # Try to get customer_paid_amount from order notes or other fields
+        # For now, we'll infer from payment_status
+        payment_status = (order.payment_status or "").lower()
+        
+        if payment_status == "payment_done":
+            # Assume full payment
+            customer_paid = order.total_amount
+        elif payment_status in ["due", "pending"]:
+            # Assume no payment
+            customer_paid = Decimal('0')
+        else:
+            # Default: assume no payment
+            customer_paid = Decimal('0')
+        
+        # Calculate: balance += customer_paid - total_amount
+        balance = balance + customer_paid - order.total_amount
+    
+    return quantize_amount(balance)
+
+
+def get_customer_balance_by_name(db: Session, name: str, phone: Optional[str] = None) -> Optional[Decimal]:
+    """Get customer balance by name and optionally phone.
+    If customer exists in customers table, return their balance.
+    Otherwise, calculate balance from historical orders and create customer record."""
+    customer = get_customer_by_name_and_phone(db, name, phone)
+    if customer:
+        return customer.balance
+    
+    # Customer doesn't exist in customers table, calculate balance from historical orders
+    balance = calculate_balance_from_orders(db, name, phone)
+    
+    # Create customer record with calculated balance
+    customer = get_or_create_customer(db, name, phone)
+    customer.balance = balance
+    customer.updated_at = get_ist_now()
+    db.add(customer)
+    db.commit()  # Commit to ensure customer is saved
+    db.refresh(customer)
+    
+    return customer.balance
 
