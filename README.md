@@ -270,6 +270,6 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 cd /home/ayushi/MyProjects/billing_system/ntrv_frontend
 python3 -m venv venv               # only once if needed
-source venv/bin/activate          # Windows: venv\Scripts\activate
 pip install -r requirements.txt
+source venv/bin/activate          # Windows: venv\Scripts\activate
 streamlit run streamlit_app.py --server.port 8501

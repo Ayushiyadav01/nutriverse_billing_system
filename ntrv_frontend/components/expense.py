@@ -6,9 +6,15 @@ import requests
 from datetime import datetime, date, timedelta
 from typing import Dict, List, Optional
 import os
+import sys
+from pathlib import Path
+
+# Add parent directory to path to import settings
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from settings import settings
 
 # API endpoint
-API_URL = "http://localhost:8000/api"
+API_URL = settings.API_URL
 
 # Expense categories from backend
 EXPENSE_CATEGORIES = [
@@ -24,7 +30,7 @@ EXPENSE_CATEGORIES = [
 ]
 
 # Directory for expense attachments
-ATTACHMENTS_DIR = "data/expense_attachments"
+ATTACHMENTS_DIR = settings.EXPENSE_ATTACHMENTS_DIR
 os.makedirs(ATTACHMENTS_DIR, exist_ok=True)
 
 

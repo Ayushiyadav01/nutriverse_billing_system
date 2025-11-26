@@ -8,11 +8,12 @@ from components.order_history import render_order_history
 from components.due_payments import render_due_payments
 from components.expense import render_expenses
 from components.customer_balance import render_customer_balance
+from settings import settings
 
 # Set page config
 st.set_page_config(
-    page_title="Nutriverse - The Nurish House",
-    page_icon="🥗",
+    page_title=settings.APP_TITLE,
+    page_icon=settings.APP_ICON,
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -49,7 +50,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # App header
-st.markdown("<h1 class='main-header'>Nutriverse - The Nurish House</h1>", unsafe_allow_html=True)
+st.markdown(f"<h1 class='main-header'>{settings.APP_TITLE}</h1>", unsafe_allow_html=True)
 st.markdown("<p class='sub-header'>Order, Billing & Analytics System</p>", unsafe_allow_html=True)
 
 # Sidebar navigation

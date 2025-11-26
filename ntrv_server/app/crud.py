@@ -140,8 +140,10 @@ def get_orders(
     return query.offset(skip).limit(limit).all()
 
 
-def generate_order_number(db: Session, prefix: str = "NV") -> str:
+def generate_order_number(db: Session, prefix: Optional[str] = None) -> str:
     """Generate a unique order number with format: PREFIX-YYYYMMDD-NNNN"""
+    if prefix is None:
+        prefix = settings.ORDER_NUMBER_PREFIX
     today = date.today().strftime("%Y%m%d")
     
     # Get the last order number for today
@@ -162,8 +164,10 @@ def generate_order_number(db: Session, prefix: str = "NV") -> str:
 def create_order(
     db: Session, 
     order_data: OrderCreate, 
-    order_number_prefix: str = "NV"
+    order_number_prefix: Optional[str] = None
 ) -> Order:
+    if order_number_prefix is None:
+        order_number_prefix = settings.ORDER_NUMBER_PREFIX
     # Process items first to calculate totals
     order_items = []
     subtotal = Decimal('0')

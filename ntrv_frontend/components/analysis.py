@@ -6,9 +6,15 @@ import requests
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 import json
+import sys
+from pathlib import Path
+
+# Add parent directory to path to import settings
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from settings import settings
 
 # API endpoint
-API_URL = "http://localhost:8000/api"
+API_URL = settings.API_URL
 
 def fetch_analytics_summary(date_from: Optional[datetime] = None, date_to: Optional[datetime] = None) -> Dict:
     """Fetch analytics summary from API"""

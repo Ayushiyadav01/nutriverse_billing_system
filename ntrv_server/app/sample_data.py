@@ -178,7 +178,7 @@ def create_sample_orders(db: Session, menu_items: List[MenuItem], num_orders: in
         total_profit = net_amount - other_costs
         
         # Generate order number
-        order_number = generate_order_number(db, "NV")
+        order_number = generate_order_number(db)  # Uses default prefix from settings
         
         # Create order
         db_order = Order(

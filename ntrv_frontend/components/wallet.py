@@ -2,9 +2,15 @@ import streamlit as st
 import requests
 from decimal import Decimal
 from typing import Optional, Dict
+import sys
+from pathlib import Path
+
+# Add parent directory to path to import settings
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from settings import settings
 
 # API endpoint
-API_URL = "http://localhost:8000/api"
+API_URL = settings.API_URL
 
 
 def lookup_customer(name: str) -> Optional[Dict]:

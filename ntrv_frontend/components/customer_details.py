@@ -3,9 +3,15 @@ import pandas as pd
 import requests
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
+import sys
+from pathlib import Path
+
+# Add parent directory to path to import settings
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from settings import settings
 
 # API endpoint
-API_URL = "http://localhost:8000/api"
+API_URL = settings.API_URL
 
 def fetch_customer_details(date_from: Optional[datetime] = None, date_to: Optional[datetime] = None) -> List[Dict]:
     """Fetch customer details from API"""
