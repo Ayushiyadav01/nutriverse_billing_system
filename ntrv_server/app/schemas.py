@@ -127,6 +127,7 @@ class OrderBase(BaseModel):
     other_costs: Decimal = Decimal('0')
     food_preparation_stage: FoodPreparationStage = FoodPreparationStage.ORDERED
     payment_status: PaymentStatus = PaymentStatus.PENDING
+    timestamp: Optional[datetime] = None  # Optional order timestamp (defaults to current IST time)
     
     @field_validator('tax_percent', 'other_costs')
     @classmethod
@@ -409,6 +410,7 @@ class Customer(BaseModel):
 
 class CustomerBalanceUpdate(BaseModel):
     balance: Decimal
+    reason: Optional[str] = None  # Reason for balance adjustment
 
 
 class CustomerPaymentAdd(BaseModel):

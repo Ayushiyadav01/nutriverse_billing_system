@@ -1,10 +1,17 @@
 import streamlit as st
 import pandas as pd
 import requests
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from typing import Dict, List, Optional, Tuple
 import json
+
+# IST timezone (UTC+5:30)
+IST = timezone(timedelta(hours=5, minutes=30))
+
+def get_ist_now() -> datetime:
+    """Get current time in IST (Indian Standard Time)"""
+    return datetime.now(IST)
 
 # API endpoint
 API_URL = "http://localhost:8000/api"
@@ -226,6 +233,9 @@ def initialize_session_state():
     
     if 'customer_paid_amount' not in st.session_state:
         st.session_state.customer_paid_amount = None
+    
+    if 'order_timestamp' not in st.session_state:
+        st.session_state.order_timestamp = get_ist_now()
 
 def add_to_cart(menu_item: Dict, qty: int, sold_price: Optional[float] = None):
     """Add an item to the cart"""
@@ -699,6 +709,42 @@ def render_billing():
                 balance_text = "New Balance (Credit)" if new_balance >= 0 else "New Balance (Owed)"
                 st.markdown(f"<span style='color: {balance_color}; font-weight: bold; font-size: 1.1em;'>**{balance_text}: ₹{abs(new_balance):,.2f}**</span>", unsafe_allow_html=True)
         
+        # Order Date & Time (optional section)
+        st.divider()
+        with st.expander("📅 Order Date & Time (Optional)", expanded=False):
+            st.caption("By default, the order will be recorded with the current IST time. You can change this if needed.")
+            
+            # Get current IST datetime components
+            current_ist = get_ist_now()
+            
+            # Date picker
+            selected_date = st.date_input(
+                "Order Date",
+                value=st.session_state.order_timestamp.date() if isinstance(st.session_state.order_timestamp, datetime) else current_ist.date(),
+                key="order_date_input"
+            )
+            
+            # Time picker
+            selected_time = st.time_input(
+                "Order Time",
+                value=st.session_state.order_timestamp.time() if isinstance(st.session_state.order_timestamp, datetime) else current_ist.time(),
+                key="order_time_input"
+            )
+            
+            # Combine date and time into datetime object
+            combined_datetime = datetime.combine(selected_date, selected_time)
+            # Make it timezone-aware (IST)
+            combined_datetime = combined_datetime.replace(tzinfo=IST)
+            st.session_state.order_timestamp = combined_datetime
+            
+            # Display formatted timestamp
+            st.caption(f"**Selected:** {combined_datetime.strftime('%Y-%m-%d %I:%M:%S %p IST')}")
+            
+            # Reset to current time button
+            if st.button("Reset to Current IST Time", use_container_width=True):
+                st.session_state.order_timestamp = get_ist_now()
+                st.rerun()
+        
         # Order mode and payment mode
         order_col1, order_col2 = st.columns(2)
         with order_col1:
@@ -806,6 +852,10 @@ def render_billing():
                         },
                         "items": order_items
                     }
+                    
+                    # Add timestamp if set (convert to ISO format string)
+                    if 'order_timestamp' in st.session_state and st.session_state.order_timestamp:
+                        order_data["timestamp"] = st.session_state.order_timestamp.isoformat()
                     
                     # Add customer_paid_amount if provided
                     if st.session_state.customer_paid_amount is not None and st.session_state.customer_paid_amount > 0:

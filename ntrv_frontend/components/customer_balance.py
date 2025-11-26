@@ -51,12 +51,15 @@ def add_customer_payment(customer_id: int, amount: float, notes: Optional[str] =
                 st.error(f"Status code: {e.response.status_code}")
         return None
 
-def update_customer_balance_manual(customer_id: int, new_balance: float) -> Optional[Dict]:
-    """Manually update customer balance"""
+def update_customer_balance_manual(customer_id: int, new_balance: float, reason: Optional[str] = None) -> Optional[Dict]:
+    """Manually update customer balance with optional reason"""
     try:
+        data = {"balance": str(new_balance)}
+        if reason:
+            data["reason"] = reason
         response = requests.post(
             f"{API_URL}/customers/{customer_id}/balance",
-            json={"balance": str(new_balance)}
+            json=data
         )
         response.raise_for_status()
         return response.json()
@@ -75,7 +78,7 @@ def render_customer_balance():
     st.header("💰 Customer Balance Management")
     
     # Create tabs
-    tab1, tab2 = st.tabs(["View Balances", "Add Payment"])
+    tab1, tab2, tab3 = st.tabs(["View Balances", "Add Payment", "Edit Balance"])
     
     with tab1:
         st.subheader("Customer Balances")
@@ -245,4 +248,90 @@ def render_customer_balance():
                                 )
                                 # Don't call st.rerun() - let the form's clear_on_submit handle it
                                 # The form will clear automatically and Streamlit will rerun naturally
+    
+    with tab3:
+        st.subheader("Edit Customer Balance")
+        st.write("Use this form to manually adjust a customer's balance. This is useful for correcting errors or making adjustments.")
+        st.warning("⚠️ **Warning:** This will directly set the balance to the specified amount. Use with caution!")
+        
+        # Fetch customers for dropdown
+        customers = fetch_all_customers()
+        
+        if not customers:
+            st.info("No customers found. Customers will be created automatically when they place orders.")
+        else:
+            # Customer selection
+            customer_options = {f"{c['name']} ({c['phone'] or 'No phone'})": c for c in customers}
+            selected_customer_label = st.selectbox(
+                "Select Customer",
+                options=list(customer_options.keys()),
+                key="edit_balance_customer_select"
+            )
+            
+            if selected_customer_label:
+                selected_customer = customer_options[selected_customer_label]
+                current_balance = float(selected_customer['balance'])
+                
+                # Show current balance
+                balance_color = "green" if current_balance >= 0 else "red"
+                balance_text = "Current Credit" if current_balance >= 0 else "Current Owed"
+                st.markdown(
+                    f"<span style='color: {balance_color}; font-weight: bold;'>"
+                    f"**{balance_text}:** ₹{abs(current_balance):,.2f}</span>",
+                    unsafe_allow_html=True
+                )
+                
+                # Edit balance form
+                with st.form("edit_balance_form", clear_on_submit=True):
+                    new_balance = st.number_input(
+                        "New Balance (₹)",
+                        min_value=-999999.99,
+                        max_value=999999.99,
+                        value=current_balance,
+                        step=0.01,
+                        format="%.2f",
+                        help="Enter the new balance amount. Positive = credit, Negative = owed."
+                    )
+                    
+                    reason = st.text_area(
+                        "Reason for Change *",
+                        placeholder="Enter the reason for this balance adjustment (e.g., 'Corrected wrong entry', 'Manual adjustment', etc.)",
+                        height=100,
+                        help="Required: Please provide a reason for this balance change for audit purposes."
+                    )
+                    
+                    # Show balance change preview
+                    balance_change = new_balance - current_balance
+                    if balance_change != 0:
+                        change_color = "green" if balance_change > 0 else "red"
+                        change_direction = "increase" if balance_change > 0 else "decrease"
+                        st.markdown(
+                            f"<span style='color: {change_color};'>"
+                            f"**Balance will {change_direction} by:** ₹{abs(balance_change):,.2f}</span>",
+                            unsafe_allow_html=True
+                        )
+                    
+                    submitted = st.form_submit_button("Update Balance", type="primary", use_container_width=True)
+                    
+                    if submitted:
+                        if not reason or not reason.strip():
+                            st.error("⚠️ Please provide a reason for this balance change.")
+                        elif new_balance == current_balance:
+                            st.info("Balance is already set to this amount. No changes made.")
+                        else:
+                            # Update balance
+                            result = update_customer_balance_manual(
+                                selected_customer['id'],
+                                new_balance,
+                                reason.strip()
+                            )
+                            
+                            if result:
+                                updated_balance = float(result['balance'])
+                                st.success(
+                                    f"✅ Balance updated successfully! "
+                                    f"New balance: ₹{updated_balance:,.2f}"
+                                )
+                                st.info(f"**Reason:** {reason.strip()}")
+                                # Don't call st.rerun() - let the form's clear_on_submit handle it
 

@@ -486,8 +486,8 @@ def update_customer_balance(
     balance_update: schemas.CustomerBalanceUpdate,
     db: Session = Depends(get_db)
 ):
-    """Manually update customer balance"""
-    customer = crud.update_customer_balance(db, customer_id, balance_update.balance)
+    """Manually update customer balance with optional reason"""
+    customer = crud.update_customer_balance(db, customer_id, balance_update.balance, balance_update.reason)
     if customer is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

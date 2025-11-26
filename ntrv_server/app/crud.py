@@ -232,9 +232,13 @@ def create_order(
     # Generate unique order number
     order_number = generate_order_number(db, order_number_prefix)
     
+    # Use provided timestamp or default to current IST time
+    order_timestamp = order_data.timestamp if order_data.timestamp else get_ist_now()
+    
     # Create order
     db_order = Order(
         order_number=order_number,
+        timestamp=order_timestamp,
         customer_name=order_data.customer_name,
         phone=order_data.phone,
         mode_of_order=order_data.mode_of_order,
