@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import pandas as pd
 import requests
@@ -5,7 +6,7 @@ from datetime import datetime
 from typing import List, Dict, Optional
 
 # API endpoint
-API_URL = "http://localhost:8000/api"
+API_URL = os.environ.get("API_URL", "http://localhost:8000/api")
 
 def fetch_due_payments() -> List[Dict]:
     """Fetch orders with pending or due payments"""

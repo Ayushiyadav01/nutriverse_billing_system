@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import pandas as pd
 import requests
@@ -5,7 +6,7 @@ from typing import Dict, List, Optional
 from decimal import Decimal
 
 # API endpoint
-API_URL = "http://localhost:8000/api"
+API_URL = os.environ.get("API_URL", "http://localhost:8000/api")
 
 def fetch_all_customers() -> List[Dict]:
     """Fetch all customers with their balances"""

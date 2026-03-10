@@ -8,7 +8,7 @@ from typing import Dict, List, Optional
 import os
 
 # API endpoint
-API_URL = "http://localhost:8000/api"
+API_URL = os.environ.get("API_URL", "http://localhost:8000/api")
 
 # Expense categories from backend
 EXPENSE_CATEGORIES = [

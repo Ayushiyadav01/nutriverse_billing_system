@@ -14,7 +14,8 @@ def get_ist_now() -> datetime:
     return datetime.now(IST)
 
 # API endpoint
-API_URL = "http://localhost:8000/api"
+import os
+API_URL = os.environ.get("API_URL", "http://localhost:8000/api")
 
 def fetch_menu_items(active_only: bool = True) -> List[Dict]:
     """Fetch menu items from API with caching"""

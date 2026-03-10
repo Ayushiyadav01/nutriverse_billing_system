@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -8,7 +9,7 @@ from typing import Dict, List, Optional, Tuple
 import json
 
 # API endpoint
-API_URL = "http://localhost:8000/api"
+API_URL = os.environ.get("API_URL", "http://localhost:8000/api")
 
 def fetch_analytics_summary(date_from: Optional[datetime] = None, date_to: Optional[datetime] = None) -> Dict:
     """Fetch analytics summary from API"""

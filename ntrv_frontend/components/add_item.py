@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import pandas as pd
 import requests
@@ -5,7 +6,7 @@ from typing import Dict, List, Optional
 import json
 
 # API endpoint
-API_URL = "http://localhost:8000/api"
+API_URL = os.environ.get("API_URL", "http://localhost:8000/api")
 
 def fetch_menu_items(active_only: bool = False) -> List[Dict]:
     """Fetch menu items from API with caching"""

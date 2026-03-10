@@ -1,10 +1,11 @@
+import os
 import streamlit as st
 import requests
 from decimal import Decimal
 from typing import Optional, Dict
 
 # API endpoint
-API_URL = "http://localhost:8000/api"
+API_URL = os.environ.get("API_URL", "http://localhost:8000/api")
 
 
 def lookup_customer(name: str) -> Optional[Dict]:

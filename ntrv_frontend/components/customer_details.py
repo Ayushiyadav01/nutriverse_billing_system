@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import pandas as pd
 import requests
@@ -5,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
 # API endpoint
-API_URL = "http://localhost:8000/api"
+API_URL = os.environ.get("API_URL", "http://localhost:8000/api")
 
 def fetch_customer_details(date_from: Optional[datetime] = None, date_to: Optional[datetime] = None) -> List[Dict]:
     """Fetch customer details from API"""
